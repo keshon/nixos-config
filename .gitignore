@@ -1,0 +1,15 @@
+backups/
+.nixctl-store
+*.bak
+__pycache__/
+*.pyc
+.vscode/
+*~
+/_old
+
+# .gitignore в nixos-config
+nixctl.py
+modules/
+backups/
+.nixctl-store
+*.bak
