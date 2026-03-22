@@ -84,7 +84,7 @@
     nixosConfigurations = {
       desktop = mkHost { env = "desktop"; hw = "desktop"; };
       laptop = mkHost { env = "laptop"; hw = "laptop"; };
-      vbox = mkHost { env = "desktop"; hw = "vbox"; };  # окружение desktop + железо vbox
+      vbox = mkHost { env = "vbox"; hw = "vbox"; };
     };
   };
 }
