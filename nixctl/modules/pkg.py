@@ -111,8 +111,7 @@ def search(initial_query: str = "", fresh: bool = False):
     if target_file is None:
         print("  Cancelled."); return
 
-    for name, _ in chosen:
-        _insert_to_file(name, target_file)
+    _insert_chosen_packages(chosen, target_file)
     print(f"  ✓ Added to: {target_file}")
     _maybe_rebuild()
 
@@ -124,7 +123,8 @@ def _search_tui(index: list[tuple[str, str]], initial_query: str = "") -> list[t
     """
     import curses
 
-    selected_names: set[str] = set()
+    # (name, desc) — unique per row; multiple nixpkgs attrs can share the same name
+    selected_items: set[tuple[str, str]] = set()
     state = {
         "query":     list(initial_query),
         "cursor":    0,
@@ -176,7 +176,7 @@ def _search_tui(index: list[tuple[str, str]], initial_query: str = "") -> list[t
                 idx = off + i
                 if idx >= len(results): break
                 name, desc = results[idx]
-                is_sel = name in selected_names
+                is_sel = (name, desc) in selected_items
                 mark = "[✓]" if is_sel else "[ ]"
                 max_desc = max(0, w - 38)
                 label = f" {mark} {name:<32} {desc[:max_desc]}"
@@ -188,7 +188,7 @@ def _search_tui(index: list[tuple[str, str]], initial_query: str = "") -> list[t
                     stdscr.addstr(row, 0, label[:w-1], attr)
 
             # Status bar
-            n_sel = len(selected_names)
+            n_sel = len(selected_items)
             n_res = len(results)
             status = f" Found: {n_res}  |  Selected: {n_sel}  |  Tab to select  Enter to install "
             stdscr.addstr(h-1, 0, status[:w-1], curses.A_REVERSE)
@@ -219,19 +219,19 @@ def _search_tui(index: list[tuple[str, str]], initial_query: str = "") -> list[t
             elif key == curses.KEY_END:
                 state["cursor"] = max(0, len(results) - 1)
 
-            elif key == ord("\t"):  # Tab — toggle current
+            elif key == ord("\t"):  # Tab — toggle current row (name+desc is unique)
                 if results and cur < len(results):
-                    name = results[cur][0]
-                    if name in selected_names:
-                        selected_names.discard(name)
+                    item = results[cur]
+                    if item in selected_items:
+                        selected_items.discard(item)
                     else:
-                        selected_names.add(name)
+                        selected_items.add(item)
                     state["cursor"] = min(len(results)-1, cur + 1)
 
             elif key in (10, 13, curses.KEY_ENTER):  # Enter
-                # If nothing selected via Tab — use current item
-                if not selected_names and results and cur < len(results):
-                    selected_names.add(results[cur][0])
+                # If nothing selected via Tab — install current row only (one tuple)
+                if not selected_items and results and cur < len(results):
+                    selected_items.add(results[cur])
                 return
 
             elif key in (27, ):  # Esc
@@ -258,8 +258,7 @@ def _search_tui(index: list[tuple[str, str]], initial_query: str = "") -> list[t
     if state["cancelled"]:
         return []
 
-    results = state["results"]
-    return [(name, desc) for name, desc in results if name in selected_names]
+    return sorted(selected_items, key=lambda x: (x[0].lower(), x[1]))
 
 
 def _filter(index: list[tuple[str, str]], query: str) -> list[tuple[str, str]]:
@@ -512,8 +511,7 @@ def _install_chosen(chosen: list[tuple[str, str]]):
     target_file, _ = _ask_install_target()
     if target_file is None:
         print("  Cancelled."); return
-    for name, _ in chosen:
-        _insert_to_file(name, target_file)
+    _insert_chosen_packages(chosen, target_file)
     print(f"  ✓ Added to: {target_file}")
     _maybe_rebuild()
 
@@ -541,6 +539,46 @@ def _pick_plain(items: list[tuple[str, str]]) -> list[tuple[str, str]]:
 # ---------------------------------------------------------------------------
 # File operations
 # ---------------------------------------------------------------------------
+
+def _insert_chosen_packages(chosen: list[tuple[str, str]], target_file: str) -> None:
+    """
+    Insert packages from search/add. Same attribute name can appear on multiple index
+    rows — only add each name once. Skip names already in the file.
+    """
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for name, _desc in sorted(chosen, key=lambda x: (x[0].lower(), x[1])):
+        if name in seen:
+            continue
+        seen.add(name)
+        ordered.append(name)
+    existing = _read_packages(target_file)
+    for name in ordered:
+        if name in existing:
+            print(f"  — '{name}' already listed, skipping")
+            continue
+        _insert_to_file(name, target_file)
+
+
+def _find_with_pkgs_list_insert_line(lines: list[str]) -> int | None:
+    """
+    Line index to insert a new attribute name: immediately before the `]` that closes
+    the first `with pkgs; [` list in the file.
+    """
+    start = None
+    for i, line in enumerate(lines):
+        if "with pkgs" in line and "[" in line:
+            start = i
+            break
+    if start is None:
+        return None
+    depth = lines[start].count("[") - lines[start].count("]")
+    for i in range(start + 1, len(lines)):
+        depth += lines[i].count("[") - lines[i].count("]")
+        if depth <= 0:
+            return i
+    return None
+
 
 def _read_user_packages_nix(path: str) -> list[str]:
     """Parse hosts/<host>/user-packages.nix — only the `with pkgs; [ ... ]` list (close with `]` not `];`)."""
@@ -640,36 +678,33 @@ def _find_package(pkg_name: str) -> list[str]:
 
 
 def _insert_to_user_packages_nix(pkg_name: str, path: str) -> bool:
-    """Insert a package attribute into the `with pkgs; [ ... ]` list."""
+    """Insert a package attribute into the `with pkgs; [ ... ]` list (before closing `]`)."""
     try:
         with open(path, encoding="utf-8") as f:
             lines = f.readlines()
     except Exception:
         print(f"  ✗ Cannot read: {path}")
         return False
-    in_block = False
-    depth = 0
-    insert_at = -1
-    indent = "    "
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if not in_block:
-            if "with pkgs" in stripped and "[" in stripped:
-                in_block = True
-                depth = stripped.count("[") - stripped.count("]")
-            continue
-        depth += stripped.count("[") - stripped.count("]")
-        if depth <= 0:
-            if insert_at == -1:
-                insert_at = i
-            break
-        code = re.sub(r"#.*", "", stripped)
-        if re.search(r"[a-zA-Z]", code) and not stripped.startswith("#"):
-            indent = re.match(r"(\s*)", line).group(1)
-            insert_at = i + 1
-    if insert_at == -1:
-        print(f"  ✗ with pkgs; [ block not found in {path}")
+
+    insert_at = _find_with_pkgs_list_insert_line(lines)
+    if insert_at is None:
+        print(f"  ✗ with pkgs; [ … ] list not found in {path}")
         return False
+
+    # Indent: match previous non-comment package line inside the list, else two spaces
+    indent = "  "
+    start = next((i for i, ln in enumerate(lines) if "with pkgs" in ln and "[" in ln), None)
+    if start is not None:
+        for j in range(start + 1, insert_at):
+            raw = lines[j]
+            stripped = raw.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if raw.strip().startswith("]"):
+                break
+            indent = re.match(r"(\s*)", raw).group(1) or indent
+            break
+
     _backup(path)
     lines.insert(insert_at, f"{indent}{pkg_name}\n")
     with open(path, "w", encoding="utf-8") as f:

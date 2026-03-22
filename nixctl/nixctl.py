@@ -16,10 +16,9 @@ System
   nixctl sys generations        list generation history
 
 Packages
-  nixctl pkg search <query>     search package (local cache → network)
-  nixctl pkg search <q> --fresh force network search
-  nixctl pkg add    <n>         add package to packages.nix
-  nixctl pkg remove <n>         remove package from packages.nix
+  nixctl pkg search [query]     interactive search (optional query)
+  nixctl pkg add <name>         add package to the chosen packages file
+  nixctl pkg remove <name>      remove package
   nixctl pkg list               list installed packages
 
 Config repo (hosts, flake)
@@ -29,10 +28,11 @@ Config repo (hosts, flake)
   nixctl host remove <n>        remove host
   nixctl host info [<n>]        show host status
 
-  nixctl self status            short git summary
-  nixctl self sync              git pull --rebase (config repo)
-  nixctl self bump              nix flake lock (refresh pinned inputs)
-  nixctl self push [message]    commit and push config changes
+  nixctl git status             short git summary
+  nixctl git sync               git pull --rebase (config repo)
+  nixctl git bump               nix flake lock (refresh pinned inputs)
+  nixctl git push [message]     commit and push config changes
+  (alias: nixctl self … — same as git)
 
 Other
   nixctl dconf apply            dump dconf + insert into home.nix
@@ -46,14 +46,9 @@ Other
   nixctl cache export <path>    export system closure to local cache
   nixctl cache import <path>    rebuild using local cache (offline)
 
-Advanced
-  nixctl reference list         alias: list reference profiles (same as templates for host new / bootstrap)
-  nixctl doctor                 flake lock, delivery path, repo health
+  nixctl reference list         list reference profiles (host new / bootstrap)
 
-Flags:
-  --host <name>   override target host (sys commands)
-  --fresh         force network search (pkg search)
-  -h, --help      show command help
+  -h, --help                    show this help
 
 Configuration:
   By default nixctl looks for your config in ~/nixos/.
@@ -74,8 +69,8 @@ ROUTES = {
     "backup":    "modules.backup",
     "cache":     "modules.cache",
     "bootstrap": "modules.bootstrap",
-    "self":      "modules.self",
-    "doctor":    "modules.doctor",
+    "git":       "modules.git",
+    "self":      "modules.git",
 }
 
 
@@ -86,12 +81,12 @@ def main():
         print(__doc__)
         return
 
-    group    = args[0]
+    group = args[0]
     sub_args = args[1:]
 
     if group not in ROUTES:
         print(f"  Unknown command: {group}")
-        print(f"  Available: {', '.join(ROUTES)}")
+        print(f"  Available: {', '.join(sorted(ROUTES.keys()))}")
         print("\n  Help: nixctl --help")
         sys.exit(1)
 
