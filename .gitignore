@@ -7,9 +7,6 @@ __pycache__/
 *~
 /_old
 
-# .gitignore в nixos-config
-nixctl.py
-modules/
-backups/
-.nixctl-store
-*.bak
+# Legacy layout at repo root only (nixctl app lives in nixctl/)
+/nixctl.py
+/modules/

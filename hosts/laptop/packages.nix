@@ -1,10 +1,10 @@
-# hosts/laptop/packages.nix — nixctl from flake; list in user-packages.nix
-{ pkgs, inputs, ... }:
+# hosts/laptop/packages.nix — nixctl from flake.nix; list in user-packages.nix
+{ pkgs, nixctl, ... }:
 let
   userPkgs = import ./user-packages.nix { inherit pkgs; };
 in
 {
   home.packages = with pkgs; [
-    inputs.nixctl.packages.${pkgs.system}.default
+    nixctl
   ] ++ userPkgs;
 }

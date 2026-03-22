@@ -12,29 +12,26 @@ nixctl backup save            snapshot your configs
 
 ## Installation
 
-**As a flake input** (recommended — single delivery channel; no submodule):
+In **keshon/nixos-config**, nixctl ships inside this repository: `./nixctl` is built by the top-level `flake.nix` and passed into Home Manager as `nixctl` (see `specialArgs` / `extraSpecialArgs`).
 
 ```nix
-# flake.nix of your personal nixos config
-inputs.nixctl.url = "github:keshon/nixctl";
-
 # hosts/<host>/packages.nix
-{ inputs, pkgs, ... }:
+{ pkgs, nixctl, ... }:
 let
   userPkgs = import ./user-packages.nix { inherit pkgs; };
 in
 {
   home.packages = with pkgs; [
-    inputs.nixctl.packages.${pkgs.system}.default
+    nixctl
   ] ++ userPkgs;
 }
 ```
 
-Update the locked input after upstream changes: `nix flake lock --update-input nixctl` (or `nixctl self bump` from your config repo).
+Refresh pinned inputs for the whole flake: `nixctl self bump` (runs `nix flake lock`).
 
-**Run without installing:**
+**Run without installing into the profile:**
 ```bash
-nix run github:keshon/nixctl -- --help
+nix run ./nixctl -- --help
 ```
 
 ## Configuration
@@ -96,7 +93,7 @@ nixctl pkg remove vlc               # remove from packages.nix
 nixctl pkg list                     # list installed packages
 ```
 
-User-selected packages are stored in `hosts/<host>/user-packages.nix` (and `packages.nix` pulls in nixctl from the flake). Legacy layouts with only `packages.nix` still work.
+User-selected packages are stored in `hosts/<host>/user-packages.nix` (and `packages.nix` pulls in nixctl from `flake.nix`). Legacy layouts with only `packages.nix` still work.
 `pkg add` asks whether to install for this machine only, another machine, or all machines.
 
 ### dconf — GNOME settings
@@ -117,12 +114,12 @@ dconf.settings = {
 };
 ```
 
-### self — repo sync and flake input
+### self — repo sync and flake lock
 
 ```bash
 nixctl self status    # short git summary
 nixctl self sync      # git pull --rebase (config repo only)
-nixctl self bump      # nix flake lock --update-input nixctl
+nixctl self bump      # nix flake lock (refresh pinned inputs)
 nixctl self push      # commit and push
 ```
 
@@ -131,7 +128,7 @@ nixctl self push      # commit and push
 ### doctor — delivery check
 
 ```bash
-nixctl doctor         # flake.lock nixctl rev, NIXCTL_DIR, optional legacy nixctl/
+nixctl doctor         # NIXCTL_DIR, ./nixctl tree, git status
 ```
 
 ### backup — config snapshots
@@ -172,41 +169,23 @@ nix-shell -p git --run "git clone https://github.com/keshon/nixos-config ~/nixos
 bash ~/nixos/bootstrap.sh
 ```
 
-## Repository structure
+## Repository structure (nixos-config)
 
 ```
-nixctl/                        ← this repo (public)
-  nixctl.py                    # entry point
-  modules/
-    config.py                  # paths, store, host detection
-    sys.py                     # system commands
-    host.py                    # host management, flake generation
-    pkg.py                     # package management
-    dconf.py                   # GNOME settings
-    backup.py                  # snapshots
-    cache.py                   # offline cache
-    bootstrap.py               # first-time setup
-  tests/
-  flake.nix                    # makes nixctl a Nix package
-
-your-nixos-config/             ← your personal repo (private)
-  flake.nix                    # generated from flake.tmpl.nix
-  flake.tmpl.nix               # template — edit this, not flake.nix
-  flake.lock
-  home.nix                     # shared user environment
-  configuration.nix            # shared system config
+nixos-config/
+  flake.nix                    # defines nixctl + nixosConfigurations
+  flake.tmpl.nix               # template for nixctl host new — do not edit flake.nix by hand
+  nixctl/                      # nixctl CLI (this subtree)
+    nixctl.py
+    modules/
+    tests/
+    flake.nix                  # optional: nix develop / nix run ./nixctl
+  home.nix
+  configuration.nix
   hosts/
-    desktop/
-      host.nix                 # hostname, bootloader
-      packages.nix             # packages for this machine
-      hardware-configuration.nix
-    laptop/
-      host.nix
-      packages.nix              # imports nixctl + user-packages.nix
-      user-packages.nix         # list edited by nixctl pkg
-      hardware-configuration.nix
+    <host>/packages.nix        # nixctl + user-packages.nix
   backups/                     # gitignored
-  .nixctl-store                # gitignored (active host, machine identity)
+  .nixctl-store                # gitignored
 ```
 
 ## Running tests

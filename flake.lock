@@ -46,24 +46,6 @@
         "type": "github"
       }
     },
-    "nixctl": {
-      "inputs": {
-        "nixpkgs": "nixpkgs_2"
-      },
-      "locked": {
-        "lastModified": 1774079913,
-        "narHash": "sha256-q9VIxMmCpCjFBoCFHrXYjr9oJbCUF2rB2SDWAVqe7MQ=",
-        "owner": "keshon",
-        "repo": "nixctl",
-        "rev": "9e908a62ec303f1900c2d509b6b418b85c4b7319",
-        "type": "github"
-      },
-      "original": {
-        "owner": "keshon",
-        "repo": "nixctl",
-        "type": "github"
-      }
-    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1771848320,
@@ -71,22 +53,6 @@
         "owner": "nixos",
         "repo": "nixpkgs",
         "rev": "2fc6539b481e1d2569f25f8799236694180c0993",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nixos",
-        "ref": "nixos-unstable",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
-    "nixpkgs_2": {
-      "locked": {
-        "lastModified": 1773821835,
-        "narHash": "sha256-TJ3lSQtW0E2JrznGVm8hOQGVpXjJyXY2guAxku2O9A4=",
-        "owner": "nixos",
-        "repo": "nixpkgs",
-        "rev": "b40629efe5d6ec48dd1efba650c797ddbd39ace0",
         "type": "github"
       },
       "original": {
@@ -128,7 +94,6 @@
       "inputs": {
         "apple-fonts": "apple-fonts",
         "home-manager": "home-manager",
-        "nixctl": "nixctl",
         "nixpkgs": "nixpkgs_3"
       }
     },

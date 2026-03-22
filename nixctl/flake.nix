@@ -28,7 +28,7 @@
 
       meta = {
         description = "NixOS control center — host, package, dconf and system management";
-        homepage    = "https://github.com/keshon/nixctl";
+        homepage    = "https://github.com/keshon/nixos-config";
         license     = pkgs.lib.licenses.mit;
         mainProgram = "nixctl";
       };

@@ -9,7 +9,6 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NIXCTL_PY="$SCRIPT_DIR/nixctl/nixctl.py"
-NIXCTL_REPO="https://github.com/keshon/nixctl"
 
 # ---------------------------------------------------------------------------
 # Ensure git is available
@@ -20,19 +19,21 @@ if ! command -v git &>/dev/null; then
 fi
 
 # ---------------------------------------------------------------------------
-# Run nixctl: prefer flake (no git submodule), else clone + python
+# Run nixctl: flake in ./nixctl (same repo), else python
 # ---------------------------------------------------------------------------
 if command -v nix &>/dev/null; then
-    echo "[bootstrap] using nix run github:keshon/nixctl (flake delivery)"
     export NIXCTL_DIR="$SCRIPT_DIR"
-    # Installer / fresh systems often lack nix.conf features; bootstrap runs before your flake applies.
-    # --no-write-lock-file: remote flake is read-only; Nix must not try to update its lock in the store.
-    exec nix --extra-experimental-features "nix-command flakes" run --no-write-lock-file "github:keshon/nixctl" -- bootstrap "$@"
+    if [ -f "$SCRIPT_DIR/nixctl/flake.nix" ]; then
+        echo "[bootstrap] using nix run $SCRIPT_DIR/nixctl"
+        exec nix --extra-experimental-features "nix-command flakes" run --no-write-lock-file "$SCRIPT_DIR/nixctl" -- bootstrap "$@"
+    fi
+    echo "[bootstrap] error: missing $SCRIPT_DIR/nixctl/flake.nix (incomplete checkout?)" >&2
+    exit 1
 fi
 
 if [ ! -f "$NIXCTL_PY" ]; then
-    echo "[bootstrap] nix not available — cloning nixctl repo next to config..."
-    git clone --depth=1 "$NIXCTL_REPO" "$SCRIPT_DIR/nixctl"
+    echo "[bootstrap] error: missing $NIXCTL_PY — use a full clone of this repository." >&2
+    exit 1
 fi
 
 if ! command -v python3 &>/dev/null; then

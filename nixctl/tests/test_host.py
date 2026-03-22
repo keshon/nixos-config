@@ -146,7 +146,8 @@ class TestNewHost:
 
         content = (host_dir / "packages.nix").read_text()
         assert "home.packages" in content
-        assert "inputs.nixctl.packages" in content
+        assert "nixctl" in content
+        assert "inputs.nixctl" not in content
         assert "user-packages.nix" in content
         up = (host_dir / "user-packages.nix").read_text()
         assert "with pkgs" in up
