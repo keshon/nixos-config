@@ -3,6 +3,7 @@ config.py — shared paths, store, host detection, command execution
 """
 
 import os
+import re
 import sys
 import json
 import platform
@@ -28,7 +29,7 @@ BACKUP_KEEP = 10
 # .nixctl-store — local JSON state (gitignored)
 # Keys:
 #   machine  — hardware identity of this machine, set at bootstrap, never changes
-#   host     — active environment (may differ from machine via `host use`)
+#   host     — legacy mirror of flake env for this machine; synced from flake (authoritative)
 #   created  — ISO date of bootstrap
 #
 # Reference vs machine (mental model):
@@ -67,31 +68,47 @@ def set_store_value(key: str, value):
 
 
 # ---------------------------------------------------------------------------
-# Host detection
+# Host detection — machine (flake #name) vs environment (hosts/<env>/ packages)
 # ---------------------------------------------------------------------------
 
+def parse_flake_host_entry(name: str) -> tuple[str, str, str]:
+    """Parse flake.nix for `name = mkHost { ... }`; return (env, hw, ref).
+
+    If the block is missing or unparsable, returns (name, name, REFERENCE_DEFAULT).
+    """
+    if not os.path.isfile(FLAKE_NIX):
+        return name, name, REFERENCE_DEFAULT
+    try:
+        with open(FLAKE_NIX, encoding="utf-8") as f:
+            content = f.read()
+        pattern = rf'{re.escape(name)}\s*=\s*mkHost\s*\{{([^}}]*)\}}'
+        m = re.search(pattern, content)
+        if m:
+            inner = m.group(1)
+            env_m = re.search(r'env\s*=\s*"([^"]+)"', inner)
+            hw_m = re.search(r'hw\s*=\s*"([^"]+)"', inner)
+            ref_m = re.search(r'ref\s*=\s*"([^"]+)"', inner)
+            env = env_m.group(1) if env_m else name
+            hw = hw_m.group(1) if hw_m else name
+            ref = ref_m.group(1) if ref_m else REFERENCE_DEFAULT
+            return env, hw, ref
+    except Exception:
+        pass
+    return name, name, REFERENCE_DEFAULT
+
+
+def get_environment() -> str:
+    """Package/profile directory name under hosts/<env>/ for this machine's flake entry."""
+    m = get_machine()
+    env, _hw, _ref = parse_flake_host_entry(m)
+    if get_store_value("host") != env:
+        set_store_value("host", env)
+    return env
+
+
 def get_host() -> str:
-    """
-    Returns the active environment name for nixctl operations.
-    Falls back to detecting the current machine name.
-    """
-    cached = get_store_value("host")
-    if cached and _store_valid():
-        return cached
-
-    hosts = _hosts_from_flake()
-    if not hosts:
-        return _hostname_guess()
-
-    machine = _hostname_guess()
-    for h in hosts:
-        if h in machine or machine in h:
-            _save_host(h)
-            return h
-
-    chosen = _ask_user(hosts)
-    _save_host(chosen)
-    return chosen
+    """Active environment name (same as get_environment(); kept for callers)."""
+    return get_environment()
 
 
 def get_machine() -> str:
@@ -153,34 +170,6 @@ def _hostname_guess() -> str:
         if node.startswith(prefix):
             return node[len(prefix):]
     return node
-
-
-def _ask_user(hosts: list[str]) -> str:
-    print(f"\n  Host not detected automatically.")
-    print(f"  Available hosts: {', '.join(hosts)}")
-    while True:
-        ans = input(f"  Choose host [{hosts[0]}]: ").strip()
-        if not ans:
-            return hosts[0]
-        if ans in hosts:
-            return ans
-        print(f"  Unknown host. Options: {', '.join(hosts)}")
-
-
-def _save_host(host: str):
-    import datetime
-    data = load_store()
-    data.setdefault("host", host)
-    data["host"] = host
-    data.setdefault("created", datetime.date.today().isoformat())
-    save_store(data)
-
-
-def _store_valid() -> bool:
-    try:
-        return os.path.getmtime(STORE_FILE) >= os.path.getmtime(FLAKE_NIX)
-    except Exception:
-        return False
 
 
 # ---------------------------------------------------------------------------

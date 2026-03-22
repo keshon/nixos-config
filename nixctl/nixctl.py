@@ -22,7 +22,7 @@ Packages
   nixctl pkg list               list installed packages
 
 Config repo (hosts, flake)
-  nixctl host list              list all hosts (active marked ★)
+  nixctl host list              list all hosts (this machine marked ★)
   nixctl host new  <n> [--from <ref>]  create host (template = references/<ref>/)
   nixctl host use  <n>          [advanced] edit another machine's packages without switching hardware
   nixctl host remove <n>        remove host
@@ -89,6 +89,15 @@ def main():
         print(f"  Available: {', '.join(sorted(ROUTES.keys()))}")
         print("\n  Help: nixctl --help")
         sys.exit(1)
+
+    try:
+        import modules.config as _nixcfg
+        _m = _nixcfg.get_machine()
+        _env = _nixcfg.get_environment()
+        _ft = _nixcfg.flake_target()
+        print(f"nixctl · machine={_m} · env={_env} · {_ft}", file=sys.stderr)
+    except Exception:
+        pass
 
     import importlib
     mod = importlib.import_module(ROUTES[group])

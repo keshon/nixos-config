@@ -17,12 +17,13 @@ from .config import (
     REFERENCES_DIR, REFERENCE_DEFAULT,
     load_store, save_store, get_store_value, set_store_value,
     confirm, _hosts_from_flake, FLAKE_TMPL,
+    parse_flake_host_entry, packages_list_path, get_environment,
 )
 
 HELP = """\
 nixctl host <команда>
 
-  list            показать все хосты (активный отмечен ★)
+  list            показать все хосты (эта машина — ★)
   new  <n> [--from <ref>]  создать новый хост (профиль из references/<ref>/)
   use  <n>   [advanced] переключить active environment (редактировать пакеты другой машины без смены железа)
   remove <n> удалить хост
@@ -97,7 +98,8 @@ def run(args: list):
 def list_hosts():
     hosts   = _hosts_from_flake()
     machine = get_store_value("machine") or _detect_machine()
-    active  = get_store_value("host") or machine
+    get_environment()
+    env_here, _, _ = parse_flake_host_entry(machine)
 
     if not hosts:
         print("  No hosts found in flake.nix")
@@ -106,24 +108,27 @@ def list_hosts():
 
     print(f"  Hostы ({len(hosts)}):")
     for h in sorted(hosts):
-        hw_ok  = os.path.isfile(os.path.join(HOSTS_DIR, h, "hardware-configuration.nix"))
+        env_h, hw_h, ref = parse_flake_host_entry(h)
+        hw_ok = os.path.isfile(
+            os.path.join(HOSTS_DIR, hw_h, "hardware-configuration.nix")
+        )
         hw_mark = "✓hw" if hw_ok else "✗hw"
-        _e, _w, ref = _parse_host_flake(h)
         ref_mark = "" if ref == REFERENCE_DEFAULT else f" ref={ref}"
 
         flags = []
-        if h == machine: flags.append("this machine")
-        if h == active and active != machine: flags.append("active environment")
-        if h == active == machine: flags.append("★ active")
+        if h == machine:
+            flags.append("this machine")
 
         flag_str = f"  [{', '.join(flags)}]" if flags else ""
-        print(f"    {'★' if h == active else '·'} {h:<20} {hw_mark}{ref_mark}{flag_str}")
+        star = "★" if h == machine else "·"
+        print(
+            f"    {star} {h:<16} {hw_mark}  env={env_h}  hw={hw_h}{ref_mark}{flag_str}"
+        )
 
-    if active != machine:
-        print()
-        print(f"  ⚠  Активное окружение: {active}")
-        print(f"  ⚠  Железо этой машины: {machine}")
-        print(f"     nixr соберёт систему с окружением '{active}' + железом '{machine}'")
+    print()
+    print(
+        f"  Machine: {machine}  ·  Packages (env): {env_here}  ·  rebuild: #{machine}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -217,17 +222,18 @@ def new_host(name: str, ref: str | None = None, dry_run: bool = False):
 def use_host(name: str, dry_run: bool = False):
     hosts   = _hosts_from_flake()
     machine = get_store_value("machine") or _detect_machine()
+    env_now, _, _ = parse_flake_host_entry(machine)
 
     if hosts and name not in hosts:
         print(f"  ✗ Host '{name}' не найден в flake.nix")
         print(f"  Доступные: {', '.join(hosts)}")
         return
 
-    if name == get_store_value("host"):
+    if name == env_now:
         print(f"  — Окружение '{name}' уже активно")
         return
 
-    prev = get_store_value("host") or machine
+    prev = env_now
     print(f"  Switching environment: {prev} → {name}")
 
     # Предупреждение если переключаемся на чужое окружение
@@ -289,7 +295,7 @@ def use_host(name: str, dry_run: bool = False):
 
 def remove_host(name: str):
     machine = get_store_value("machine") or _detect_machine()
-    active  = get_store_value("host") or machine
+    active_env, _, _ = parse_flake_host_entry(machine)
 
     if name == machine:
         print(f"  ✗ Cannot remove the current machine's host ('{name}')")
@@ -308,7 +314,7 @@ def remove_host(name: str):
         print("  Cancelled."); return
 
     # Если удаляем active environment — возвращаемся на своё
-    if active == name:
+    if active_env == name:
         set_store_value("host", machine)
         _update_flake_env(machine=machine, env=machine)
         print(f"  → Active environment switched back to '{machine}'")
@@ -331,24 +337,31 @@ def remove_host(name: str):
 
 def info_host(name: str | None = None):
     machine = get_store_value("machine") or _detect_machine()
-    active  = get_store_value("host") or machine
-    target  = name or active
+    target = name or machine
 
-    host_dir = os.path.join(HOSTS_DIR, target)
-    env_p, hw_p, ref_p = _parse_host_flake(target)
-    print(f"  Host: {target}")
+    env_p, hw_p, ref_p = parse_flake_host_entry(target)
+    hw_dir = os.path.join(HOSTS_DIR, hw_p)
+    env_dir = os.path.join(HOSTS_DIR, env_p)
+
+    print(f"  Flake host (nixosConfigurations): {target}")
     print(f"  Flake: env={env_p}, hw={hw_p}, ref={ref_p}")
-    print(f"  Directory: {host_dir}")
+    print(f"  Hardware & boot: {hw_dir}/")
+    print(f"  Packages & host.nix: {env_dir}/")
 
-    files = ["host.nix", "boot.nix", "packages.nix", "hardware-configuration.nix"]
-    for f in files:
-        path = os.path.join(host_dir, f)
+    print("  Files (hardware / boot):")
+    for f in ("hardware-configuration.nix", "boot.nix"):
+        path = os.path.join(hw_dir, f)
         mark = "✓" if os.path.isfile(path) else "✗"
         print(f"    {mark} {f}")
 
-    # Packages
+    print("  Files (profile / packages):")
+    for f in ("host.nix", "packages.nix", "user-packages.nix"):
+        path = os.path.join(env_dir, f)
+        mark = "✓" if os.path.isfile(path) else "✗"
+        print(f"    {mark} {f}")
+
     from .pkg import _read_packages
-    pkg_file = os.path.join(host_dir, "packages.nix")
+    pkg_file = packages_list_path(env_p)
     pkgs = _read_packages(pkg_file)
     if pkgs:
         print(f"  Packages ({len(pkgs)}): {', '.join(pkgs[:8])}" +
@@ -356,7 +369,7 @@ def info_host(name: str | None = None):
 
     store = load_store()
     print(f"  .nixctl-store: machine={store.get('machine','?')}, "
-          f"host={store.get('host','?')}, "
+          f"host={store.get('host','?')} (mirrors flake env for this machine), "
           f"created={store.get('created','?')}")
 
 
@@ -425,38 +438,15 @@ def _current_hosts_config() -> dict[str, dict]:
     # Определяем текущий env/hw/ref для каждого хоста из flake.nix
     config = {}
     for h in hosts:
-        env, hw, ref = _parse_host_flake(h)
+        env, hw, ref = parse_flake_host_entry(h)
         config[h] = {"env": env or h, "hw": hw or h, "ref": ref}
     return config
 
 
 def _parse_host_flake(host: str) -> tuple[str | None, str | None, str]:
-    """Извлекает env, hw и ref для хоста из flake.nix через простой парсинг.
-
-    Если паттерн env/hw не найден (старый формат flake.nix),
-    возвращает (host, host, REFERENCE_DEFAULT).
-    """
-    if not os.path.isfile(FLAKE_NIX):
-        return host, host, REFERENCE_DEFAULT
-    try:
-        with open(FLAKE_NIX, encoding="utf-8") as f:
-            content = f.read()
-        import re
-        # Блок: hostname = mkHost { ... };
-        pattern = rf'{re.escape(host)}\s*=\s*mkHost\s*\{{([^}}]*)\}}'
-        m = re.search(pattern, content)
-        if m:
-            inner = m.group(1)
-            env_m = re.search(r'env\s*=\s*"([^"]+)"', inner)
-            hw_m = re.search(r'hw\s*=\s*"([^"]+)"', inner)
-            ref_m = re.search(r'ref\s*=\s*"([^"]+)"', inner)
-            env = env_m.group(1) if env_m else host
-            hw = hw_m.group(1) if hw_m else host
-            ref = ref_m.group(1) if ref_m else REFERENCE_DEFAULT
-            return env, hw, ref
-    except Exception:
-        pass
-    return host, host, REFERENCE_DEFAULT
+    """Backward-compatible wrapper; see parse_flake_host_entry in config."""
+    e, h, r = parse_flake_host_entry(host)
+    return e, h, r
 
 
 def _update_flake_add(new_host: str, ref: str | None = None) -> bool:

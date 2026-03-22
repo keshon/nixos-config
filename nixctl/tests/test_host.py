@@ -194,3 +194,55 @@ class TestStore:
         set_store_value("host", "laptop")
         assert get_store_value("host") == "laptop"
         assert get_store_value("missing", "default") == "default"
+
+
+# ---------------------------------------------------------------------------
+# Environment from flake (machine vs env)
+# ---------------------------------------------------------------------------
+
+class TestEnvironmentFromFlake:
+    def test_stale_store_host_does_not_override_flake_env(self, tmp_path):
+        """When store['host'] disagrees with flake env for this machine, flake wins."""
+        nixos, hosts = setup_nixos_dir(tmp_path)
+        (nixos / "flake.nix").write_text(
+            "nixosConfigurations = {\n"
+            '  vbox = mkHost { env = "desktop"; hw = "vbox"; };\n'
+            "};\n"
+        )
+        (hosts / "desktop").mkdir(parents=True)
+        (hosts / "vbox").mkdir(parents=True)
+        (hosts / "desktop" / "user-packages.nix").write_text(
+            "{ pkgs, ... }:\nwith pkgs; [\n]\n"
+        )
+
+        from modules.config import (
+            set_store_value,
+            get_environment,
+            get_host,
+            get_store_value,
+            packages_list_path,
+            parse_flake_host_entry,
+        )
+
+        set_store_value("machine", "vbox")
+        set_store_value("host", "vbox")
+
+        assert parse_flake_host_entry("vbox") == ("desktop", "vbox", "minimal")
+        assert get_environment() == "desktop"
+        assert get_host() == "desktop"
+        assert get_store_value("host") == "desktop"
+        assert "hosts" in packages_list_path() and "desktop" in packages_list_path().replace(
+            "\\", "/"
+        )
+
+    def test_parse_flake_host_entry_inline(self, tmp_path):
+        nixos, hosts = setup_nixos_dir(tmp_path)
+        (nixos / "flake.nix").write_text(
+            '  vbox = mkHost { env = "desktop"; hw = "vbox"; ref = "gaming"; };\n'
+        )
+        from modules.config import parse_flake_host_entry
+
+        env, hw, ref = parse_flake_host_entry("vbox")
+        assert env == "desktop"
+        assert hw == "vbox"
+        assert ref == "gaming"

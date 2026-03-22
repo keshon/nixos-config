@@ -18,7 +18,9 @@ import shutil
 from .config import (
     HOME_NIX, NIXOS_DIR, HOSTS_DIR,
     exec_cmd, exec_shell, confirm,
-    get_host, packages_nix, packages_list_path,
+    get_host, get_machine, get_environment,
+    packages_list_path,
+    parse_flake_host_entry,
     _hosts_from_flake,
 )
 
@@ -450,15 +452,16 @@ def remove(pkg_name: str) -> bool:
 
 
 def list_pkgs():
-    host = get_host()
-    pkg_file = packages_list_path(host)
+    machine = get_machine()
+    env = get_environment()
+    pkg_file = packages_list_path(env)
     shown_any = False
 
     if os.path.isfile(pkg_file):
         pkgs = _read_packages(pkg_file)
         if pkgs:
             label = os.path.basename(pkg_file)
-            print(f"  [{host}] {label} ({len(pkgs)}):")
+            print(f"  [flake #{machine} · env {env}] {label} ({len(pkgs)}):")
             for p in pkgs:
                 print(f"    • {p}")
             shown_any = True
@@ -480,18 +483,34 @@ def list_pkgs():
 # ---------------------------------------------------------------------------
 
 def _ask_install_target() -> tuple[str | None, str]:
-    hosts = _hosts_from_flake() or [get_host()]
-    current = get_host()
+    hosts = _hosts_from_flake()
+    if not hosts:
+        hosts = [get_machine()]
+    machine = get_machine()
+    env_here = get_environment()
     print()
     print("  Where to install?")
-    options = []
-    pkg_file = packages_list_path(current)
-    options.append((f"this machine only ({current})  →  {pkg_file}", pkg_file))
-    for h in hosts:
-        if h != current:
-            f = packages_list_path(h)
-            options.append((f"other machine ({h})  →  {f}", f))
-    options.append((f"all machines  →  home.nix", HOME_NIX))
+    options: list[tuple[str, str]] = []
+    seen_paths: set[str] = set()
+
+    def add_option(label: str, path: str) -> None:
+        if path in seen_paths:
+            return
+        seen_paths.add(path)
+        options.append((label, path))
+
+    pkg_here = packages_list_path(env_here)
+    add_option(
+        f"this machine (flake {machine}) · env '{env_here}' → {pkg_here}",
+        pkg_here,
+    )
+    for h in sorted(hosts):
+        if h == machine:
+            continue
+        env_h, _hw_h, _ref = parse_flake_host_entry(h)
+        f = packages_list_path(env_h)
+        add_option(f"flake host '{h}' · env '{env_h}' → {f}", f)
+    add_option("all hosts (shared) → home.nix", HOME_NIX)
     for i, (label, _) in enumerate(options, 1):
         print(f"    [{i}] {label}")
     ans = input(f"  Choice [1]: ").strip()
