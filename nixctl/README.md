@@ -27,7 +27,7 @@ in
 }
 ```
 
-Refresh pinned inputs for the whole flake: `nixctl self bump` (runs `nix flake lock`).
+Refresh pinned inputs for the whole flake: `nixctl git bump` (runs `nix flake lock`). Same as `nixctl self bump` (alias).
 
 **Run without installing into the profile:**
 ```bash
@@ -57,7 +57,6 @@ nixctl sys rollback           # roll back to previous generation
 nixctl sys gc                 # delete old generations (asks confirmation)
 nixctl sys generations        # list generation history
 
-nixctl sys rebuild --host laptop   # override target host
 ```
 
 ### host — multi-machine management
@@ -114,22 +113,16 @@ dconf.settings = {
 };
 ```
 
-### self — repo sync and flake lock
+### git — repo sync and flake lock
 
 ```bash
-nixctl self status    # short git summary
-nixctl self sync      # git pull --rebase (config repo only)
-nixctl self bump      # nix flake lock (refresh pinned inputs)
-nixctl self push      # commit and push
+nixctl git status     # short git summary
+nixctl git sync       # git pull --rebase (config repo only)
+nixctl git bump       # nix flake lock (refresh pinned inputs)
+nixctl git push       # commit and push
 ```
 
-`self pull` and `self update` are aliases for `sync` and `bump` respectively.
-
-### doctor — delivery check
-
-```bash
-nixctl doctor         # NIXCTL_DIR, ./nixctl tree, git status
-```
+`nixctl self …` is an alias for `nixctl git …`. Subcommands `pull` and `update` are aliases for `sync` and `bump`.
 
 ### backup — config snapshots
 

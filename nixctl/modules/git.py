@@ -1,12 +1,12 @@
 """
-self.py — repo sync and flake input updates
+modules/git.py — git operations on the config repo (like git status / pull / push)
 
-nixctl self status   short git summary (see nixctl doctor for details)
-nixctl self sync     git pull --rebase for the config repo (no submodule)
-nixctl self bump     nix flake lock (refresh pinned inputs)
-nixctl self push     commit and push config repo changes
+nixctl git status   short git summary
+nixctl git sync     git pull --rebase for the config repo
+nixctl git bump     nix flake lock (refresh pinned inputs)
+nixctl git push     commit and push config repo changes
 
-Legacy: self pull → sync; submodule workflows removed from defaults.
+Legacy alias: nixctl self … (same module)
 """
 
 import os
@@ -15,7 +15,7 @@ import subprocess
 from .config import NIXOS_DIR, confirm
 
 HELP = """\
-nixctl self <command>
+nixctl git <command>
 
   status   short repo summary
   sync     pull config repo (git pull --rebase) — happy path
@@ -49,7 +49,7 @@ def run(args: list):
     }
 
     if cmd not in dispatch:
-        print(f"  Unknown command: self {cmd}")
+        print(f"  Unknown command: git {cmd}")
         print(HELP)
         return
 
@@ -74,9 +74,9 @@ def status():
     ahead  = _git(NIXOS_DIR, ["rev-list", "--count", "HEAD..@{u}"])
     behind = _git(NIXOS_DIR, ["rev-list", "--count", "@{u}..HEAD"])
     if ahead and ahead != "0":
-        print(f"  Upstream : {ahead} new commit(s) available  ← nixctl self sync")
+        print(f"  Upstream : {ahead} new commit(s) available  ← nixctl git sync")
     elif behind and behind != "0":
-        print(f"  Upstream : {behind} local commit(s) not pushed  ← nixctl self push")
+        print(f"  Upstream : {behind} local commit(s) not pushed  ← nixctl git push")
     else:
         print(f"  Upstream : up to date")
 
@@ -89,7 +89,7 @@ def status():
         print(f"  Changes  : none")
 
     print()
-    print("  For flake.lock refresh: nixctl doctor  |  nixctl self bump")
+    print("  Refresh flake.lock: nixctl git bump")
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +205,6 @@ def _env_no_git_prompt() -> dict:
     """
     env = os.environ.copy()
     env["GIT_TERMINAL_PROMPT"] = "0"
-    # Git Credential Manager (Windows / cross-platform): never pop UI for these commands
     env["GCM_INTERACTIVE"] = "never"
     env.pop("GIT_ASKPASS", None)
     return env

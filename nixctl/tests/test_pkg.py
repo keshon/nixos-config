@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from modules.pkg import (
     _read_packages,
     _insert_to_file,
+    _insert_chosen_packages,
     _remove_from_file,
     _match_rank,
     _filter,
@@ -127,6 +128,26 @@ class TestInsertPackage:
         # Original packages still present
         assert "firefox" in pkgs
         assert "vlc" in pkgs
+
+    def test_inserts_user_packages_before_close(self, tmp_path):
+        src = os.path.join(FIXTURES, "user-packages.nix")
+        dst = tmp_path / "user-packages.nix"
+        shutil.copy(src, dst)
+        _insert_to_file("go", str(dst))
+        text = dst.read_text()
+        assert "with pkgs; [" in text
+        assert text.find("go") < text.rfind("]")
+        assert text.count("go") == 1
+
+    def test_chosen_dedupes_identical_names(self, tmp_path):
+        src = os.path.join(FIXTURES, "user-packages.nix")
+        dst = tmp_path / "user-packages.nix"
+        shutil.copy(src, dst)
+        _insert_chosen_packages(
+            [("go", "desc a"), ("go", "desc b"), ("go", "desc c")],
+            str(dst),
+        )
+        assert _read_packages(str(dst)).count("go") == 1
 
 
 class TestRemovePackage:

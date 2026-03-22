@@ -391,13 +391,13 @@ in
   nixdconf        — дамп + применить все dconf настройки
   nixdconf-select — дамп + выбор секций (curses TUI)
 
-  nixctl system rebuild
-  nixctl system update / gc / rollback
+  nixctl sys rebuild | update | check | gc | rollback
+  nixctl pkg search | add | remove | list
+  nixctl git sync | bump | push | status
   nixctl dconf apply [--select]
-  nixctl packages search/add/remove <pkg>
-  nixctl backup create / list / restore
+  nixctl backup save | list | restore
   nixctl cache export/import <path>
-  nixctl bootstrap
+  nixctl bootstrap [--resume]
 "'';
     };
   };

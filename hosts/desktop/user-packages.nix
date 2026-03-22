@@ -8,6 +8,7 @@ with pkgs; [
   handbrake
   mkvtoolnix
   telegram-desktop
+  go
 
   # v2ray
   xray
