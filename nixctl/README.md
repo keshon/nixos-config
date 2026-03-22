@@ -1,18 +1,35 @@
 # nixctl
 
-NixOS control center. Manage your system, packages, hosts, and GNOME settings from one CLI tool.
+NixOS configuration helper: system rebuilds, packages, flake machines/profiles, GNOME settings, git, backups, and cache — from one CLI.
+
+Every command prints a one-line context on stderr, for example:
+
+`nixctl | machine=vbox | profile=desktop | /home/you/nixos#vbox`
+
+Run `nixctl` with no arguments for a short list of groups; `nixctl --help` for the full command reference.
 
 ```
-nixctl sys rebuild            rebuild the system
-nixctl pkg search firefox     search and install packages interactively
-nixctl host use laptop        switch to another machine's environment
-nixctl dconf apply            sync GNOME settings into home.nix
-nixctl backup save            snapshot your configs
+nixctl sys rebuild
+nixctl pkg search firefox
+nixctl host use laptop
+nixctl dconf apply
+nixctl backup save
 ```
+
+## Quick start (fresh NixOS install)
+
+Clone this repo into `~/nixos` and run the root `bootstrap.sh` (it invokes `nixctl bootstrap` via `nix run` when flakes are available):
+
+```bash
+nix-shell -p git --run "git clone https://github.com/keshon/nixos-config ~/nixos" && \
+bash ~/nixos/bootstrap.sh
+```
+
+Requires `nix` with flakes enabled for the scripted path; see `bootstrap.sh` in the repo for `--resume` and fallbacks.
 
 ## Installation
 
-In **keshon/nixos-config**, nixctl ships inside this repository: `./nixctl` is built by the top-level `flake.nix` and passed into Home Manager as `nixctl` (see `specialArgs` / `extraSpecialArgs`).
+In **keshon/nixos-config**, nixctl lives in `./nixctl` and is built by the top-level `flake.nix`, then passed into Home Manager as `nixctl` (see `specialArgs` / `extraSpecialArgs`).
 
 ```nix
 # hosts/<host>/packages.nix
@@ -27,9 +44,10 @@ in
 }
 ```
 
-Refresh pinned inputs for the whole flake: `nixctl git bump` (runs `nix flake lock`). Same as `nixctl self bump` (alias).
+Refresh pinned inputs for the whole flake: `nixctl git bump` (same as `nixctl self bump`).
 
-**Run without installing into the profile:**
+**Run without installing into the profile** (from the repo root):
+
 ```bash
 nix run ./nixctl -- --help
 ```
@@ -39,6 +57,7 @@ nix run ./nixctl -- --help
 nixctl looks for your NixOS config in `~/nixos/` by default.
 
 Override with an environment variable:
+
 ```bash
 NIXCTL_DIR=~/my-nixos-config nixctl sys rebuild
 ```
@@ -50,57 +69,48 @@ Your config directory should contain `flake.nix`, `flake.tmpl.nix`, `home.nix`, 
 ### sys — system management
 
 ```bash
-nixctl sys rebuild            # nixos-rebuild switch
-nixctl sys update             # nix flake update + rebuild
-nixctl sys check              # dry-run, no changes applied
-nixctl sys rollback           # roll back to previous generation
-nixctl sys gc                 # delete old generations (asks confirmation)
-nixctl sys generations        # list generation history
-
+nixctl sys rebuild
+nixctl sys update              # nix flake update + rebuild
+nixctl sys check               # dry-run
+nixctl sys rollback
+nixctl sys gc                  # delete old generations (asks confirmation)
+nixctl sys generations
 ```
 
-### host — multi-machine management
+If your **software profile** (flake `env`) differs from **this machine’s** flake name, `nixctl sys rebuild` warns before applying.
+
+### host — flake entries, profiles, and hardware
 
 ```bash
-nixctl host list              # all hosts, active marked ★
-nixctl host new laptop        # create hosts/laptop/ + update flake.nix
-nixctl host use laptop        # switch active environment
-nixctl host remove laptop     # remove host (asks confirmation)
-nixctl host info [laptop]     # show host status
+nixctl host list               # table: FLAKE, PROFILE, HARDWARE, ref, HW-CONF
+nixctl host new laptop         # create hosts/laptop/ + update flake.nix
+nixctl host use laptop         # point this machine’s profile at another flake name (advanced)
+nixctl host remove laptop      # remove entry (asks confirmation)
+nixctl host info [laptop]      # paths and files for one flake name
 ```
 
-**How host switching works:**
+**Profile vs hardware:** the flake defines `env` (software under `hosts/<env>/`) and `hw` (disks/boot under `hosts/<hw>/`). `nixctl host use laptop` on another machine keeps **hardware** on the current machine and borrows **packages/host.nix** from the `laptop` profile. `nixctl sys rebuild` warns when profile and machine name differ.
 
-nixctl separates *environment* (`env`) from *hardware* (`hw`).
-When you run `nixctl host use laptop` on your desktop:
-
-- Hardware stays from `desktop` (`hardware-configuration.nix`)
-- Packages and settings come from `laptop` (`packages.nix`, `host.nix`)
-
-This lets you inspect and edit any machine's config from any other machine safely.
-`nixctl sys rebuild` will warn you if `env ≠ machine` before applying.
-
-The `flake.nix` is generated from `flake.tmpl.nix` — do not edit it directly.
+`flake.nix` is generated from `flake.tmpl.nix` — do not edit `flake.nix` by hand; use `nixctl host` commands.
 
 ### pkg — package management
 
 ```bash
-nixctl pkg search firefox           # search (local cache first, then network)
-nixctl pkg search firefox --fresh   # force network search
-nixctl pkg add vlc                  # add to packages.nix (asks which machine)
-nixctl pkg remove vlc               # remove from packages.nix
-nixctl pkg list                     # list installed packages
+nixctl pkg search firefox
+nixctl pkg search firefox --fresh
+nixctl pkg add vlc
+nixctl pkg remove vlc
+nixctl pkg list
 ```
 
-User-selected packages are stored in `hosts/<host>/user-packages.nix` (and `packages.nix` pulls in nixctl from `flake.nix`). Legacy layouts with only `packages.nix` still work.
-`pkg add` asks whether to install for this machine only, another machine, or all machines.
+User packages live in `hosts/<profile>/user-packages.nix` when present. `pkg add` asks: this machine, another flake entry, or shared `home.nix`.
 
 ### dconf — GNOME settings
 
 ```bash
-nixctl dconf apply            # dump dconf + insert all sections into home.nix
-nixctl dconf apply --select   # same, with interactive curses section picker
-nixctl dconf dump             # only save to dconf-backup.txt
+nixctl dconf apply
+nixctl dconf apply --select
+nixctl dconf dump
 ```
 
 Settings are inserted between markers in `home.nix`:
@@ -116,71 +126,61 @@ dconf.settings = {
 ### git — repo sync and flake lock
 
 ```bash
-nixctl git status     # short git summary
-nixctl git sync       # git pull --rebase (config repo only)
-nixctl git bump       # nix flake lock (refresh pinned inputs)
-nixctl git push       # commit and push
+nixctl git status
+nixctl git sync
+nixctl git bump
+nixctl git push
 ```
 
-`nixctl self …` is an alias for `nixctl git …`. Subcommands `pull` and `update` are aliases for `sync` and `bump`.
+`nixctl self …` is an alias for `nixctl git …`. Subcommands `pull` and `update` alias `sync` and `bump`.
 
 ### backup — config snapshots
 
 ```bash
-nixctl backup save            # snapshot to backups/<timestamp>/
-nixctl backup list            # list snapshots
-nixctl backup restore         # restore latest snapshot
-nixctl backup restore 3       # restore third snapshot by number
+nixctl backup save
+nixctl backup list
+nixctl backup restore
+nixctl backup restore 3
 ```
 
-Snapshots are stored in `backups/` (gitignored). Last 10 are kept automatically.
+Snapshots live under `backups/` (gitignored). The last 10 are kept automatically.
 
 ### cache — offline installation
 
 ```bash
-nixctl cache export /mnt/usb/nix-cache   # copy system closure to USB drive
-nixctl cache import /mnt/usb/nix-cache   # rebuild using local cache (no internet)
+nixctl cache export /mnt/usb/nix-cache
+nixctl cache import /mnt/usb/nix-cache
 ```
 
 ### bootstrap — first-time setup
 
+Same flow as [Quick start](#quick-start), or run manually after cloning:
+
 ```bash
 nixctl bootstrap
-nixctl bootstrap --resume [HOST]    # skip wizard; continue from hardware → rebuild
-nixctl bootstrap --resume --force-hardware [HOST]   # re-copy hardware from /etc/nixos
+nixctl bootstrap --resume [HOST]
+nixctl bootstrap --resume --force-hardware [HOST]
 ```
 
-Interactive wizard for a fresh machine:
-1. Detect host from `flake.nixosConfigurations` (or ask)
-2. Copy `hardware-configuration.nix` → `hosts/<host>/`
-3. `git add` the hardware config so Nix flakes can see it
-4. Create symlink `/etc/nixos → ~/nixos`
-5. `nixos-rebuild switch`
-6. Add Flathub
-
-If something fails (often step 5), fix `flake.nix` / `hosts/…` and run **`nixctl bootstrap --resume vbox`** (or omit the name if `.nixctl-store` already has the host). Hardware copy is skipped when `hosts/<host>/hardware-configuration.nix` already exists unless you pass **`--force-hardware`**.
-
-**One-liner for a fresh NixOS install:**
-```bash
-nix-shell -p git --run "git clone https://github.com/keshon/nixos-config ~/nixos" && \
-bash ~/nixos/bootstrap.sh
-```
+Interactive steps: pick or create a flake host, copy `hardware-configuration.nix`, symlink `/etc/nixos` → `~/nixos`, `nixos-rebuild switch`, Flathub. If step fails, fix the config and run `nixctl bootstrap --resume` (host name optional if `.nixctl-store` is set). Use `--force-hardware` to re-copy hardware from `/etc/nixos`.
 
 ## Repository structure (nixos-config)
 
 ```
 nixos-config/
+  bootstrap.sh                 # quick start entry (nix run nixctl bootstrap)
   flake.nix                    # defines nixctl + nixosConfigurations
-  flake.tmpl.nix               # template for nixctl host new — do not edit flake.nix by hand
+  flake.tmpl.nix               # template for nixctl host new
   nixctl/                      # nixctl CLI (this subtree)
     nixctl.py
     modules/
     tests/
-    flake.nix                  # optional: nix develop / nix run ./nixctl
+    flake.nix                  # nix develop / nix run ./nixctl
   home.nix
   configuration.nix
   hosts/
-    <host>/packages.nix        # nixctl + user-packages.nix
+    <host>/packages.nix
+    <host>/user-packages.nix
   backups/                     # gitignored
   .nixctl-store                # gitignored
 ```
