@@ -1,5 +1,5 @@
 """
-modules/backup.py — ротационные бэкапы конфигов
+modules/backup.py — rotated snapshots of the config tree
 
 nixctl backup save
 nixctl backup list
@@ -13,11 +13,11 @@ from datetime import datetime
 from .config import NIXOS_DIR, BACKUP_DIR, BACKUP_KEEP, confirm
 
 HELP = """\
-nixctl backup <команда>
+nixctl backup <command>
 
-  save          создать снимок всех конфигов
-  list          показать список снимков
-  restore [n]   восстановить снимок (по умолчанию последний)
+  save          save a snapshot of config files and dirs
+  list          list snapshots
+  restore [n]   restore a snapshot (default: latest)
 """
 
 BACKUP_FILES = [
@@ -73,7 +73,7 @@ def save() -> str | None:
             shutil.copytree(src, os.path.join(dest, dname), dirs_exist_ok=True)
             count += 1
 
-    print(f"  ✓ Снимок создан: backups/{stamp}  ({count} items)")
+    print(f"  done: snapshot backups/{stamp}  ({count} items)")
     _rotate()
     return dest
 
@@ -91,13 +91,13 @@ def list_backups() -> list[str]:
 def restore(name: str) -> bool:
     src = os.path.join(BACKUP_DIR, name)
     if not os.path.isdir(src):
-        print(f"  ✗ Снимок not found: {name}"); return False
+        print(f"  error: snapshot not found: {name}"); return False
 
-    if not confirm(f"Restore from '{name}'? Текущее состояние будет сохранено.", default=False):
+    if not confirm(f"Restore from '{name}'? Current tree will be snapshotted first.", default=False):
         print("  Cancelled."); return False
 
     # Сначала сохраняем текущее
-    print("  → Saving current state...")
+    print("  -> Saving current state...")
     save()
 
     count = 0
@@ -111,7 +111,7 @@ def restore(name: str) -> bool:
                 shutil.rmtree(d)
             shutil.copytree(s, d); count += 1
 
-    print(f"  ✓ Restored from '{name}'  ({count} items)")
+    print(f"  done: restored from '{name}'  ({count} items)")
     print("    Run 'nixctl sys rebuild' to apply")
     return True
 
@@ -123,7 +123,7 @@ def _print_list():
         return
     print(f"  Snapshots ({len(lst)}, newest first):")
     for i, name in enumerate(lst, 1):
-        marker = " ← latest" if i == 1 else ""
+        marker = " (latest)" if i == 1 else ""
         print(f"    [{i}] {name}{marker}")
 
 
@@ -133,4 +133,4 @@ def _rotate():
         return
     for name in lst[BACKUP_KEEP:]:
         shutil.rmtree(os.path.join(BACKUP_DIR, name))
-    print(f"  → Rotation: removed old snapshots: {len(lst) - BACKUP_KEEP}")
+    print(f"  -> rotation: removed old snapshots: {len(lst) - BACKUP_KEEP}")

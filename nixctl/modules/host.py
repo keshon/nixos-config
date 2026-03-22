@@ -1,11 +1,5 @@
 """
-modules/host.py — управление хостами
-
-nixctl host list
-nixctl host new  <n>
-nixctl host use  <n>
-nixctl host remove <n>
-nixctl host info [<n>]
+modules/host.py — flake machines and profiles (nixctl host …)
 """
 
 import os
@@ -21,17 +15,17 @@ from .config import (
 )
 
 HELP = """\
-nixctl host <команда>
+nixctl host <command>
 
-  list            показать все хосты (эта машина — ★)
-  new  <n> [--from <ref>]  создать новый хост (профиль из references/<ref>/)
-  use  <n>   [advanced] переключить active environment (редактировать пакеты другой машины без смены железа)
-  remove <n> удалить хост
-  info [<n>]      показать состояние хоста
+  list              list flake configurations (this machine marked with *)
+  new  <n> [--from <ref>]   create a new machine entry + hosts/<n>/ (template ref)
+  use  <n>   [advanced]     point software profile at another flake name (same hardware)
+  remove <n>                remove a flake entry and its hosts/<n>/ tree
+  info [<n>]                show flake paths and files for this or another name
 
 Flags:
   --dry-run       new/use: show planned changes only (no files, no flake edits)
-  --from <ref>    new: записать ref в flake (должен существовать references/<ref>/home.nix)
+  --from <ref>    new: set ref in flake (references/<ref>/home.nix must exist)
 """
 
 
@@ -71,18 +65,18 @@ def run(args: list):
         list_hosts()
     elif cmd == "new":
         if not rest:
-            print("  Укажи имя: nixctl host new laptop"); return
+            print("  error: name required (example: nixctl host new laptop)"); return
         new_args, ref = _parse_new_host_args(rest)
         if not new_args:
-            print("  Укажи имя: nixctl host new laptop [--from minimal]"); return
+            print("  error: name required (example: nixctl host new laptop --from minimal)"); return
         new_host(new_args[0], ref=ref, dry_run=dry_run)
     elif cmd == "use":
         if not rest:
-            print("  Укажи имя: nixctl host use laptop"); return
+            print("  error: name required (example: nixctl host use laptop)"); return
         use_host(rest[0], dry_run=dry_run)
     elif cmd == "remove":
         if not rest:
-            print("  Укажи имя: nixctl host remove laptop"); return
+            print("  error: name required (example: nixctl host remove laptop)"); return
         remove_host(rest[0])
     elif cmd == "info":
         info_host(rest[0] if rest else None)
@@ -96,39 +90,42 @@ def run(args: list):
 # ---------------------------------------------------------------------------
 
 def list_hosts():
-    hosts   = _hosts_from_flake()
+    hosts = _hosts_from_flake()
     machine = get_store_value("machine") or _detect_machine()
     get_environment()
-    env_here, _, _ = parse_flake_host_entry(machine)
+    env_here, hw_here, ref_here = parse_flake_host_entry(machine)
 
     if not hosts:
-        print("  No hosts found in flake.nix")
-        print("  Create the first one: nixctl host new desktop")
+        print("  No flake configurations found (nixosConfigurations).")
+        print("  Create one: nixctl host new <name>")
         return
 
-    print(f"  Hostы ({len(hosts)}):")
+    print()
+    print(f"  Flake configurations ({len(hosts)})")
+    print()
+    print("  This machine")
+    print(f"    flake name (rebuild #…):  {machine}")
+    print(f"    software profile:         {env_here}   (under hosts/{env_here}/)")
+    print(f"    hardware:                 {hw_here}   (under hosts/{hw_here}/)")
+    if ref_here != REFERENCE_DEFAULT:
+        print(f"    reference template:       {ref_here}")
+    print()
+    print(f"    {'FLAKE':<14} {'PROFILE':<12} {'HARDWARE':<12} {'REF':<10} {'HW-CONF'}")
+    print("  " + "-" * 64)
     for h in sorted(hosts):
         env_h, hw_h, ref = parse_flake_host_entry(h)
         hw_ok = os.path.isfile(
             os.path.join(HOSTS_DIR, hw_h, "hardware-configuration.nix")
         )
-        hw_mark = "✓hw" if hw_ok else "✗hw"
-        ref_mark = "" if ref == REFERENCE_DEFAULT else f" ref={ref}"
-
-        flags = []
-        if h == machine:
-            flags.append("this machine")
-
-        flag_str = f"  [{', '.join(flags)}]" if flags else ""
-        star = "★" if h == machine else "·"
+        ref_s = ref if ref != REFERENCE_DEFAULT else "default"
+        star = "*" if h == machine else " "
+        conf = "yes" if hw_ok else "no"
         print(
-            f"    {star} {h:<16} {hw_mark}  env={env_h}  hw={hw_h}{ref_mark}{flag_str}"
+            f"  {star} {h:<12} {env_h:<12} {hw_h:<12} {ref_s:<10} {conf}"
         )
-
     print()
-    print(
-        f"  Machine: {machine}  ·  Packages (env): {env_here}  ·  rebuild: #{machine}"
-    )
+    print("  * = this machine. PROFILE = software (packages, host.nix). HARDWARE = disks / boot.")
+    print("  HW-CONF = hardware-configuration.nix exists under hosts/<HARDWARE>/.")
 
 
 # ---------------------------------------------------------------------------
@@ -140,27 +137,27 @@ def validate_new_host(name: str, ref: str | None = None) -> str | None:
     if ref is None:
         ref = REFERENCE_DEFAULT
     if not name.replace("-", "").replace("_", "").isalnum():
-        return f"  ✗ Invalid name: '{name}' (letters, digits, - _ only)"
+        return f"  error: invalid name {name!r} (use letters, digits, - and _ only)"
 
     ref_path = os.path.join(REFERENCES_DIR, ref, "home.nix")
     if not os.path.isfile(ref_path):
         return (
-            f"  ✗ Reference '{ref}' not found: {ref_path}\n"
-            f"  Available: nixctl reference list"
+            f"  error: reference {ref!r} not found: {ref_path}\n"
+            f"  See: nixctl reference list"
         )
 
     host_dir = os.path.join(HOSTS_DIR, name)
     if os.path.isdir(host_dir):
         return (
-            f"  ✗ Host '{name}' already exists: {host_dir}\n"
-            f"  Use bootstrap → existing host, or pick another name."
+            f"  error: {name!r} already exists: {host_dir}\n"
+            f"  Use bootstrap with an existing name, or pick another name."
         )
 
     hosts = _hosts_from_flake()
     if hosts and name in hosts:
         return (
-            f"  ✗ Host '{name}' is already in flake.nix\n"
-            f"  Use bootstrap → existing host, or pick another name."
+            f"  error: {name!r} is already in flake.nix\n"
+            f"  Use bootstrap with an existing entry, or pick another name."
         )
     return None
 
@@ -171,13 +168,13 @@ def create_host_files(name: str, ref: str, bootloader: str, device: str) -> bool
     os.makedirs(host_dir, exist_ok=True)
     _write_host_nix(name, host_dir, bootloader, device)
     _write_packages_nix(name, host_dir)
-    print(f"  ✓ Created: hosts/{name}/")
+    print(f"  done: created hosts/{name}/")
 
     ok = _update_flake_add(name, ref=ref)
     if ok:
-        print(f"  ✓ flake.nix updated")
+        print("  done: flake.nix updated")
     else:
-        print(f"  ⚠ flake.nix not updated — add host manually")
+        print("  warning: flake.nix not updated; add the host to flake.nix manually")
 
     _git_add(host_dir)
     _git_add(FLAKE_NIX)
@@ -225,32 +222,31 @@ def use_host(name: str, dry_run: bool = False):
     env_now, _, _ = parse_flake_host_entry(machine)
 
     if hosts and name not in hosts:
-        print(f"  ✗ Host '{name}' не найден в flake.nix")
-        print(f"  Доступные: {', '.join(hosts)}")
+        print(f"  error: no flake entry {name!r}")
+        print(f"  Available: {', '.join(hosts)}")
         return
 
     if name == env_now:
-        print(f"  — Окружение '{name}' уже активно")
+        print(f"  Already using software profile {name!r} (see flake for this machine).")
         return
 
     prev = env_now
-    print(f"  Switching environment: {prev} → {name}")
+    print(f"  Switching software profile: {prev} -> {name}")
 
     # Предупреждение если переключаемся на чужое окружение
     if name != machine:
         print()
-        print(f"  ⚠  You are switching to ANOTHER machine's environment")
-        print(f"  ⚠  Hardware (hardware-configuration) stays from '{machine}'")
-        print(f"  ⚠  nixr will build with packages from '{name}' + железом '{machine}'")
-        print(f"  —  Boot loader: hosts/{machine}/boot.nix (this machine), not from '{name}'")
+        print("  warning: you are borrowing another flake entry's software profile.")
+        print(f"  warning: hardware (disks, boot) stays on this machine: {machine!r}")
+        print(f"  warning: rebuild would use packages from profile {name!r} and hardware from {machine!r}.")
+        print(f"  Boot loader: hosts/{machine}/boot.nix (this machine), not hosts/{name}/boot.nix")
         _warn_env_boot_mismatch(machine, name)
         print()
-        print(f"  This is safe for:")
-        print(f"    • viewing another machine's config (nixctl pkg list)")
-        print(f"    • testing another machine's packages")
-        print(f"    • editing another machine's user-packages.nix")
+        print("  Safe uses:")
+        print("    - inspect or edit another profile's packages (nixctl pkg list)")
+        print("    - compare user-packages.nix between machines")
         print()
-        print(f"  ⚠  Do NOT run nixr unless you know what you're doing!")
+        print("  warning: do not run nixctl sys rebuild / nixr unless you intend to apply this mix.")
         print()
         if dry_run:
             print("  [dry-run] Would ask confirmation, then update flake + .nixctl-store.")
@@ -266,27 +262,25 @@ def use_host(name: str, dry_run: bool = False):
 
     # Обновляем flake.nix: hw = machine, env = name
     if _update_flake_env(machine=machine, env=name):
-        print(f"  ✓ flake.nix updated (hw={machine}, env={name})")
+        print(f"  done: flake.nix updated (hardware={machine}, profile={name})")
     else:
-        print(f"  ⚠ flake.nix не обновлён")
+        print("  warning: flake.nix could not be updated")
 
-    # Сохраняем в store
     set_store_value("host", name)
-    print(f"  ✓ Активное окружение: {name}")
+    print(f"  done: software profile for this machine is now {name!r}")
 
     if name != machine:
         print()
-        print(f"  Для возврата к своему окружению: nixctl host use {machine}")
+        print(f"  To point back at the default tree for this machine: nixctl host use {machine}")
 
-    # Без rebuild окружение не применится — предлагаем сразу
     print()
-    print(f"  Окружение переключено, но пакеты обновятся только после rebuild.")
+    print("  Profile change applies after a rebuild.")
     from .config import confirm as _confirm
-    if _confirm("Применить сейчас? (nixctl sys rebuild)", default=True):
+    if _confirm("Rebuild now? (nixctl sys rebuild)", default=True):
         from .sys import rebuild
         rebuild()
     else:
-        print(f"  Запусти вручную когда будешь готов: nixr")
+        print("  Run when ready: nixctl sys rebuild  (or your nixr alias)")
 
 
 # ---------------------------------------------------------------------------
@@ -298,37 +292,36 @@ def remove_host(name: str):
     active_env, _, _ = parse_flake_host_entry(machine)
 
     if name == machine:
-        print(f"  ✗ Cannot remove the current machine's host ('{name}')")
+        print(f"  error: cannot remove this machine's flake entry ({name!r})")
         return
 
     host_dir = os.path.join(HOSTS_DIR, name)
     if not os.path.isdir(host_dir):
-        print(f"  ✗ Host '{name}' not found: {host_dir}")
+        print(f"  error: directory not found: {host_dir}")
         return
 
-    print(f"  Removing host '{name}':")
-    print(f"    • папка: {host_dir}")
-    print(f"    • entry in flake.nix")
+    print(f"  Remove flake entry {name!r}:")
+    print(f"    directory: {host_dir}")
+    print("    flake.nix: entry will be removed")
 
-    if not confirm(f"Удалить хост '{name}'? This is irreversible.", default=False):
+    if not confirm(f"Remove {name!r}? This cannot be undone.", default=False):
         print("  Cancelled."); return
 
     # Если удаляем active environment — возвращаемся на своё
     if active_env == name:
         set_store_value("host", machine)
         _update_flake_env(machine=machine, env=machine)
-        print(f"  → Active environment switched back to '{machine}'")
+        print(f"  -> Software profile reset to {machine!r} (matches this machine name).")
 
     # Удаляем папку
     shutil.rmtree(host_dir)
-    print(f"  ✓ Removed directory: {host_dir}")
+    print(f"  done: removed {host_dir}")
 
-    # Обновляем flake.nix
     if _update_flake_remove(name):
-        print(f"  ✓ flake.nix updated")
+        print("  done: flake.nix updated")
 
     _git_add(FLAKE_NIX)
-    print(f"  ✓ Host '{name}' удалён")
+    print(f"  done: removed flake entry {name!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -343,22 +336,22 @@ def info_host(name: str | None = None):
     hw_dir = os.path.join(HOSTS_DIR, hw_p)
     env_dir = os.path.join(HOSTS_DIR, env_p)
 
-    print(f"  Flake host (nixosConfigurations): {target}")
-    print(f"  Flake: env={env_p}, hw={hw_p}, ref={ref_p}")
-    print(f"  Hardware & boot: {hw_dir}/")
-    print(f"  Packages & host.nix: {env_dir}/")
+    print(f"  Flake name (nixosConfigurations): {target}")
+    print(f"  profile (software): {env_p}   -> {env_dir}/")
+    print(f"  hardware (disks, boot): {hw_p}   -> {hw_dir}/")
+    print(f"  reference: {ref_p}")
 
     print("  Files (hardware / boot):")
     for f in ("hardware-configuration.nix", "boot.nix"):
         path = os.path.join(hw_dir, f)
-        mark = "✓" if os.path.isfile(path) else "✗"
-        print(f"    {mark} {f}")
+        mark = "yes" if os.path.isfile(path) else "no"
+        print(f"    [{mark}] {f}")
 
     print("  Files (profile / packages):")
     for f in ("host.nix", "packages.nix", "user-packages.nix"):
         path = os.path.join(env_dir, f)
-        mark = "✓" if os.path.isfile(path) else "✗"
-        print(f"    {mark} {f}")
+        mark = "yes" if os.path.isfile(path) else "no"
+        print(f"    [{mark}] {f}")
 
     from .pkg import _read_packages
     pkg_file = packages_list_path(env_p)
@@ -411,12 +404,12 @@ def _render_flake(hosts_config: dict[str, dict], tmpl_path: str | None = None) -
             if ref == REFERENCE_DEFAULT:
                 lines.append(
                     f'      {host} = mkHost {{ env = "{env}"; hw = "{hw}"; }};'
-                    f'  # окружение {env} + железо {hw}'
+                    f'  # profile {env} + hardware {hw}'
                 )
             else:
                 lines.append(
                     f'      {host} = mkHost {{ env = "{env}"; hw = "{hw}"; ref = "{ref}"; }};'
-                    f'  # окружение {env} + железо {hw}'
+                    f'  # profile {env} + hardware {hw}'
                 )
 
     hosts_block = "\n".join(lines)
@@ -503,7 +496,7 @@ def _write_flake(config: dict[str, dict]) -> bool:
             f.write(content)
         return True
     except Exception as e:
-        print(f"  ✗ Error writing flake.nix: {e}")
+        print(f"  error: could not write flake.nix: {e}")
         return False
 
 
@@ -540,9 +533,9 @@ def _warn_env_boot_mismatch(machine: str, env: str):
             txt = f.read()
         if "boot.loader" in txt or "boot.initrd" in txt:
             print()
-            print(f"  ⚠  hosts/{env}/host.nix still contains boot.*")
-            print(f"     It is still merged into the build when env ≠ hw and can conflict with")
-            print(f"     hosts/{machine}/boot.nix. Remove boot.* from host.nix (loader belongs in boot.nix).")
+            print(f"  warning: hosts/{env}/host.nix still contains boot.*")
+            print("     That file is merged when profile != hardware and can conflict with")
+            print(f"     hosts/{machine}/boot.nix. Remove boot.* from host.nix (use boot.nix for the loader).")
     except Exception:
         pass
 
@@ -616,7 +609,7 @@ def _write_host_nix(name: str, host_dir: str,
 
     with open(boot_path, "w", encoding="utf-8") as f:
         f.write(
-            f"# hosts/{name}/boot.nix — загрузчик (в flake импортируется только с hw)\n"
+            f"# hosts/{name}/boot.nix — bootloader (imported from hardware profile only)\n"
             f"{{ ... }}:\n\n{{\n"
             f"{boot_block}"
             f"}}\n"
@@ -625,7 +618,7 @@ def _write_host_nix(name: str, host_dir: str,
     with open(host_path, "w", encoding="utf-8") as f:
         f.write(
             f"# hosts/{name}/host.nix\n"
-            f"# Machine-specific settings for \'{name}\' (hostname; загрузчик — boot.nix)\n"
+            f"# Machine-specific settings for '{name}' (hostname; bootloader is boot.nix)\n"
             f"{{ ... }}:\n\n{{\n"
             f"  networking.hostName = \"nixos-{name}\";\n"
             f"}}\n"

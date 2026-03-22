@@ -62,7 +62,7 @@ def run(args: list):
 
 def status():
     print("  nixos-config (short)")
-    print(f"  {'─' * 38}")
+    print(f"  {'-' * 38}")
 
     branch = _git(NIXOS_DIR, ["rev-parse", "--abbrev-ref", "HEAD"])
     print(f"  Branch   : {branch or '?'}")
@@ -74,9 +74,9 @@ def status():
     ahead  = _git(NIXOS_DIR, ["rev-list", "--count", "HEAD..@{u}"])
     behind = _git(NIXOS_DIR, ["rev-list", "--count", "@{u}..HEAD"])
     if ahead and ahead != "0":
-        print(f"  Upstream : {ahead} new commit(s) available  ← nixctl git sync")
+        print(f"  Upstream : {ahead} new commit(s) available  (run: nixctl git sync)")
     elif behind and behind != "0":
-        print(f"  Upstream : {behind} local commit(s) not pushed  ← nixctl git push")
+        print(f"  Upstream : {behind} local commit(s) not pushed  (run: nixctl git push)")
     else:
         print(f"  Upstream : up to date")
 
@@ -97,19 +97,19 @@ def status():
 # ---------------------------------------------------------------------------
 
 def sync():
-    print("  → git pull --rebase (config repo)...")
+    print("  -> git pull --rebase (config repo)...")
     code = _run(NIXOS_DIR, ["git", "pull", "--rebase"], env=_env_no_git_prompt())
 
     if code != 0:
         print()
-        print("  ✗ Pull failed — there may be conflicts.")
+        print("  error: pull failed (resolve conflicts and retry).")
         print("    Options:")
         print("    • Discard local changes : git -C ~/nixos checkout -- .")
         print("    • Stash local changes   : git -C ~/nixos stash")
         print("    • See what conflicts    : git -C ~/nixos status")
         return
 
-    print("  ✓ Done")
+    print("  done.")
 
     changed = _git(NIXOS_DIR, ["diff", "HEAD@{1}", "--name-only"]) or ""
     nix_changed = [f for f in changed.splitlines() if f.endswith(".nix")]
@@ -136,18 +136,18 @@ def pull():
 # ---------------------------------------------------------------------------
 
 def bump():
-    print("  → nix flake lock …")
+    print("  -> nix flake lock ...")
     code = _run(
         NIXOS_DIR,
         ["nix", "flake", "lock"],
         env=_env_no_git_prompt(),
     )
     if code != 0:
-        print("  ✗ flake lock failed")
+        print("  error: flake lock failed")
         print("    If this needs private inputs, run: nix flake lock")
         print("    in a shell where you can authenticate.")
         return
-    print("  ✓ flake.lock updated")
+    print("  done: flake.lock updated")
     print()
     print("  Rebuild if needed: nixctl sys rebuild")
 
@@ -178,15 +178,15 @@ def push(extra_args: list):
 
     code = _run(NIXOS_DIR, ["git", "commit", "-m", msg])
     if code != 0:
-        print("  ✗ Commit failed")
+        print("  error: commit failed")
         return
 
-    print("  → Pushing...")
+    print("  -> pushing...")
     code = _run(NIXOS_DIR, ["git", "push"])
     if code == 0:
-        print("  ✓ Pushed")
+        print("  done: pushed")
     else:
-        print("  ✗ Push failed")
+        print("  error: push failed")
         print("    Public repo still requires your identity to push.")
         print("    • SSH: git remote set-url origin git@github.com:USER/REPO.git")
         print("    • HTTPS: use a GitHub personal access token (not your password)")

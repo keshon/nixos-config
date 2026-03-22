@@ -9,12 +9,11 @@ import os
 from .config import REFERENCES_DIR, REFERENCE_DEFAULT
 
 HELP = """\
-nixctl reference <команда>
+nixctl reference <command>
 
-  list    показать доступные референсы (каталоги с home.nix)
+  list    list profiles under references/<name>/home.nix
 
-  (Alias for scripts; templates are also listed at `nixctl bootstrap` and
-   `nixctl host new --from <ref>`.)
+  (Templates are also listed in `nixctl bootstrap` and `nixctl host new --from <ref>`.)
 """
 
 
@@ -59,4 +58,4 @@ def list_references():
     print(f"  References ({len(names)}):")
     for n in names:
         mark = " (default)" if n == REFERENCE_DEFAULT else ""
-        print(f"    · {n}{mark}")
+        print(f"    - {n}{mark}")

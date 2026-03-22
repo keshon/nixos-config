@@ -54,7 +54,7 @@ def save_store(data: dict):
         with open(STORE_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
     except Exception as e:
-        print(f"  ✗ Could not write store: {e}")
+        print(f"  error: could not write store: {e}")
 
 
 def get_store_value(key: str, default=None):

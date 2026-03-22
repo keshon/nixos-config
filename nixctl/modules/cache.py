@@ -1,5 +1,5 @@
 """
-modules/cache.py — локальный кеш Nix на флешке
+modules/cache.py — local Nix binary cache (e.g. USB)
 
 nixctl cache export <path>
 nixctl cache import <path>
@@ -11,12 +11,12 @@ import subprocess
 from .config import NIXOS_DIR, exec_shell, flake_target, confirm
 
 HELP = """\
-nixctl cache <команда>
+nixctl cache <command>
 
-  export <path>   скопировать текущую систему в локальный кеш
-                  пример: nixctl cache export /mnt/usb/nix-cache
-  import <path>   использовать локальный кеш при следующем rebuild
-                  пример: nixctl cache import /mnt/usb/nix-cache
+  export <path>   copy current system closure to a local cache dir
+                  example: nixctl cache export /mnt/usb/nix-cache
+  import <path>   use that cache as a substituter on the next rebuild
+                  example: nixctl cache import /mnt/usb/nix-cache
 """
 
 
@@ -47,26 +47,26 @@ def export(dest: str) -> bool:
     code, out = exec_shell("readlink -f /run/current-system", capture=True)
     system_path = out.strip()
     if not system_path:
-        print("  ✗ Не удалось определить путь системы"); return False
+        print("  error: could not resolve /run/current-system"); return False
 
-    print(f"  → Exporting {system_path}")
-    print(f"     в {dest}")
-    print("     (может занять несколько минут...)")
+    print(f"  -> Exporting {system_path}")
+    print(f"     to {dest}")
+    print("     (this may take several minutes)")
 
     code, _ = exec_shell(f"nix copy --to 'file://{dest}' '{system_path}'")
     if code == 0:
-        print(f"  ✓ Cache exported: {dest}")
+        print(f"  done: cache exported to {dest}")
         return True
-    print(f"  ✗ Ошибка (код {code})")
+    print(f"  error: nix copy failed (exit {code})")
     return False
 
 
 def cache_import(src: str) -> bool:
     if not os.path.isdir(src):
-        print(f"  ✗ Path not found: {src}"); return False
+        print(f"  error: path not found: {src}"); return False
 
     target = flake_target()
-    print(f"  → Rebuild with cache: {src}")
+    print(f"  -> Rebuild with cache: {src}")
 
     code, _ = exec_shell(
         f"sudo nixos-rebuild switch --flake {target} "
@@ -76,9 +76,9 @@ def cache_import(src: str) -> bool:
     )
 
     if code == 0:
-        print("  ✓ Rebuild with local cache completed")
+        print("  done: rebuild with local cache finished")
         return True
-    print(f"  ✗ Ошибка (код {code})")
+    print(f"  error: nixos-rebuild failed (exit {code})")
     return False
 
 
