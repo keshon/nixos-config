@@ -11,6 +11,10 @@
 
 set -e
 
+if [[ -d /sys/firmware/efi ]]; then
+  echo "[bootstrap] UEFI detected (/sys/firmware/efi). When asked, prefer systemd-boot (UEFI), not BIOS+GRUB, unless you boot in legacy mode."
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NIXCTL_PY="$SCRIPT_DIR/nixctl/nixctl.py"
 

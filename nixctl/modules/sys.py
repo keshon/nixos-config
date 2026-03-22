@@ -116,3 +116,6 @@ def generations() -> int:
 
 def _done(code: int):
     print("  done." if code == 0 else f"  error: exit code {code}")
+    if code != 0:
+        print("  hint: if this failed after package edits, check hosts/.../user-packages.nix")
+        print("        and run: nixctl pkg verify")

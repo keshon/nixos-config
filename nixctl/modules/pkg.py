@@ -33,9 +33,11 @@ nixctl pkg <command>
                              name substring > description (word then substring)
   add    <n>   add package directly (without search)
   remove <n>   remove package
-  list               list installed packages
+  list         list installed packages
+  verify       nix build the system closure (no switch); catches bad attrs / fetch errors
 
 Edits hosts/<host>/user-packages.nix when that file exists; otherwise legacy packages.nix.
+After add/search install, nixctl runs verify unless NIXCTL_SKIP_VERIFY=1.
 """
 
 # Package index cache
@@ -71,6 +73,8 @@ def run(args: list):
         remove(rest[0])
     elif cmd == "list":
         list_pkgs()
+    elif cmd == "verify":
+        verify_config_build()
     else:
         print(f"  Unknown command: pkg {cmd}")
         print(HELP)
@@ -115,36 +119,49 @@ def search(initial_query: str = "", fresh: bool = False):
 
     _insert_chosen_packages(chosen, target_file)
     print(f"  done: added to: {target_file}")
-    _maybe_rebuild()
+    if _maybe_verify_after_pkg_edit():
+        _maybe_rebuild()
 
 
 def _search_tui(index: list[tuple[str, str]], initial_query: str = "") -> list[tuple[str, str]]:
     """
     Interactive TUI: input line at top, results list below.
-    Filtering happens instantly as you type.
+    Filtering is debounced (~160ms after typing stops) to keep typing responsive.
     """
     import curses
 
-    # (name, desc) — unique per row; multiple nixpkgs attrs can share the same name
+    DEBOUNCE_S = 0.16
     selected_items: set[tuple[str, str]] = set()
     state = {
-        "query":     list(initial_query),
-        "cursor":    0,
-        "offset":    0,
+        "query": list(initial_query),
+        "cursor": 0,
+        "offset": 0,
         "cancelled": False,
-        "results":   _filter(index, initial_query),
+        "results": _filter(index, initial_query),
+        "filter_dirty": False,
+        "filter_deadline": 0.0,
     }
 
     def draw(stdscr):
         curses.curs_set(1)
         curses.start_color()
         curses.use_default_colors()
-        curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)   # highlight
-        curses.init_pair(2, curses.COLOR_GREEN,  -1)                  # selected
-        curses.init_pair(3, curses.COLOR_YELLOW, -1)                  # header
-        curses.init_pair(4, curses.COLOR_CYAN,   -1)                  # input line
+        curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)
+        curses.init_pair(2, curses.COLOR_GREEN, -1)
+        curses.init_pair(3, curses.COLOR_YELLOW, -1)
+        curses.init_pair(4, curses.COLOR_CYAN, -1)
+
+        stdscr.timeout(40)
 
         while True:
+            now = time.monotonic()
+            if state["filter_dirty"] and now >= state["filter_deadline"]:
+                state["results"] = _filter(index, "".join(state["query"]))
+                state["filter_dirty"] = False
+                nr = len(state["results"])
+                state["cursor"] = min(state["cursor"], max(0, nr - 1))
+                state["offset"] = 0
+
             stdscr.erase()
             h, w = stdscr.getmaxyx()
             vis = max(1, h - 6)
@@ -153,30 +170,28 @@ def _search_tui(index: list[tuple[str, str]], initial_query: str = "") -> list[t
             results = state["results"]
             query_str = "".join(state["query"])
 
-            # Row 0: title
             title = f" nixctl pkg search  [{len(index)} packages in index] "
             stdscr.addstr(0, 0, title[:w-1], curses.color_pair(3) | curses.A_BOLD)
 
-            # Row 1: input field
             prompt = "  Search: "
             stdscr.addstr(1, 0, prompt, curses.color_pair(4))
-            qshow = query_str[-(w - len(prompt) - 2):]  # scroll if long
+            qshow = query_str[-(w - len(prompt) - 2):]
             stdscr.addstr(1, len(prompt), qshow)
 
-            # Row 2: hints
             hints = "[↑↓/PgUp/PgDn] navigate  [Tab] select  [Enter] install  [Esc/Q] cancel"
             stdscr.addstr(2, 0, hints[:w-1], curses.A_DIM)
             stdscr.addstr(3, 0, "-" * (w - 1))
 
-            # Scroll
-            if cur < off: off = cur
-            elif cur >= off + vis: off = cur - vis + 1
+            if cur < off:
+                off = cur
+            elif cur >= off + vis:
+                off = cur - vis + 1
             state["offset"] = off
 
-            # Results list
             for i in range(vis):
                 idx = off + i
-                if idx >= len(results): break
+                if idx >= len(results):
+                    break
                 name, desc = results[idx]
                 is_sel = (name, desc) in selected_items
                 mark = "[x]" if is_sel else "[ ]"
@@ -189,31 +204,30 @@ def _search_tui(index: list[tuple[str, str]], initial_query: str = "") -> list[t
                     attr = curses.color_pair(2) if is_sel else 0
                     stdscr.addstr(row, 0, label[:w-1], attr)
 
-            # Status bar
             n_sel = len(selected_items)
             n_res = len(results)
-            status = f" Found: {n_res}  |  Selected: {n_sel}  |  Tab to select  Enter to install "
-            stdscr.addstr(h-1, 0, status[:w-1], curses.A_REVERSE)
+            pending = state["filter_dirty"]
+            extra = " | pause to filter" if pending else ""
+            status = f" Found: {n_res}  |  Selected: {n_sel}{extra}  |  Tab  Enter to install "
+            stdscr.addstr(h - 1, 0, status[:w-1], curses.A_REVERSE)
 
-            # Cursor in input field
-            cursor_x = min(len(prompt) + len(qshow), w-2)
+            cursor_x = min(len(prompt) + len(qshow), w - 2)
             stdscr.move(1, cursor_x)
             stdscr.refresh()
 
-            # Key handling
             key = stdscr.getch()
 
             if key == curses.KEY_UP or key == ord("k") and not state["query"]:
                 state["cursor"] = max(0, cur - 1)
 
             elif key == curses.KEY_DOWN or key == ord("j") and not state["query"]:
-                state["cursor"] = min(max(0, len(results)-1), cur + 1)
+                state["cursor"] = min(max(0, len(results) - 1), cur + 1)
 
             elif key == curses.KEY_PPAGE:
                 state["cursor"] = max(0, cur - vis)
 
             elif key == curses.KEY_NPAGE:
-                state["cursor"] = min(max(0, len(results)-1), cur + vis)
+                state["cursor"] = min(max(0, len(results) - 1), cur + vis)
 
             elif key == curses.KEY_HOME:
                 state["cursor"] = 0
@@ -221,39 +235,44 @@ def _search_tui(index: list[tuple[str, str]], initial_query: str = "") -> list[t
             elif key == curses.KEY_END:
                 state["cursor"] = max(0, len(results) - 1)
 
-            elif key == ord("\t"):  # Tab — toggle current row (name+desc is unique)
+            elif key == ord("\t"):
                 if results and cur < len(results):
                     item = results[cur]
                     if item in selected_items:
                         selected_items.discard(item)
                     else:
                         selected_items.add(item)
-                    state["cursor"] = min(len(results)-1, cur + 1)
+                    state["cursor"] = min(len(results) - 1, cur + 1)
 
-            elif key in (10, 13, curses.KEY_ENTER):  # Enter
-                # If nothing selected via Tab — install current row only (one tuple)
+            elif key in (10, 13, curses.KEY_ENTER):
+                if state["filter_dirty"]:
+                    state["results"] = _filter(index, "".join(state["query"]))
+                    state["filter_dirty"] = False
+                    results = state["results"]
+                    cur = min(state["cursor"], max(0, len(results) - 1))
+                    state["cursor"] = cur
                 if not selected_items and results and cur < len(results):
                     selected_items.add(results[cur])
                 return
 
-            elif key in (27, ):  # Esc
-                state["cancelled"] = True; return
+            elif key in (27,):
+                state["cancelled"] = True
+                return
 
             elif key == ord("q") and not state["query"]:
-                state["cancelled"] = True; return
+                state["cancelled"] = True
+                return
 
             elif key == curses.KEY_BACKSPACE or key == 127:
                 if state["query"]:
                     state["query"].pop()
-                    state["results"] = _filter(index, "".join(state["query"]))
-                    state["cursor"] = 0
-                    state["offset"] = 0
+                    state["filter_dirty"] = True
+                    state["filter_deadline"] = time.monotonic() + DEBOUNCE_S
 
-            elif 32 <= key <= 126:  # printable characters
+            elif 32 <= key <= 126:
                 state["query"].append(chr(key))
-                state["results"] = _filter(index, "".join(state["query"]))
-                state["cursor"] = 0
-                state["offset"] = 0
+                state["filter_dirty"] = True
+                state["filter_deadline"] = time.monotonic() + DEBOUNCE_S
 
     curses.wrapper(draw)
 
@@ -404,6 +423,55 @@ def _fetch_index_fallback() -> list[tuple[str, str]]:
 
 
 # ---------------------------------------------------------------------------
+# Verify flake builds (nix build toplevel, no switch)
+# ---------------------------------------------------------------------------
+
+def verify_config_build() -> bool:
+    """Build nixosConfigurations.<machine> system toplevel without activating."""
+    if os.environ.get("NIXCTL_SKIP_VERIFY"):
+        print("  (skipped: NIXCTL_SKIP_VERIFY is set)")
+        return True
+    if not shutil.which("nix"):
+        print("  warning: nix not in PATH; skipping verify.")
+        return True
+    machine = get_machine()
+    attr = f'{NIXOS_DIR}#nixosConfigurations.{machine}.config.system.build.toplevel'
+    print(f"  -> nix build --no-link (machine={machine!r}) ...")
+    try:
+        r = subprocess.run(
+            [
+                "nix", "build", attr,
+                "--no-link",
+                "--accept-flake-config",
+            ],
+            cwd=NIXOS_DIR,
+            capture_output=True,
+            text=True,
+            timeout=3600,
+        )
+    except subprocess.TimeoutExpired:
+        print("  error: nix build timed out (1h).")
+        return False
+    except FileNotFoundError:
+        print("  warning: nix not found; skipping verify.")
+        return True
+    if r.returncode == 0:
+        print("  done: configuration builds successfully.")
+        return True
+    combined = (r.stderr or "") + "\n" + (r.stdout or "")
+    lines = [ln for ln in combined.splitlines() if ln.strip()]
+    tail = "\n".join(lines[-35:]) if lines else "(no log output)"
+    print("  error: nix build failed. Fix the flake or remove recent lines from user-packages.nix / home.nix.")
+    print(tail)
+    return False
+
+
+def _maybe_verify_after_pkg_edit() -> bool:
+    """Run verify after editing package lists; skip rebuild suggestion if verify fails."""
+    return verify_config_build()
+
+
+# ---------------------------------------------------------------------------
 # Add / remove
 # ---------------------------------------------------------------------------
 
@@ -420,7 +488,8 @@ def add(pkg_name: str) -> bool:
     ok = _insert_to_file(pkg_name, target_file)
     if ok:
         print(f"  done: added to: {target_file}")
-        _maybe_rebuild()
+        if _maybe_verify_after_pkg_edit():
+            _maybe_rebuild()
     return ok
 
 
@@ -532,7 +601,8 @@ def _install_chosen(chosen: list[tuple[str, str]]):
         print("  Cancelled."); return
     _insert_chosen_packages(chosen, target_file)
     print(f"  done: added to: {target_file}")
-    _maybe_rebuild()
+    if _maybe_verify_after_pkg_edit():
+        _maybe_rebuild()
 
 
 def _pick_plain(items: list[tuple[str, str]]) -> list[tuple[str, str]]:

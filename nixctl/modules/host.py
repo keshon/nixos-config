@@ -193,7 +193,8 @@ def new_host(name: str, ref: str | None = None, dry_run: bool = False):
     bootloader, device = _ask_bootloader(dry_run=dry_run)
     _print_boot_plan(name, bootloader, device)
     if dry_run:
-        print("  (dry-run defaults: BIOS + GRUB on /dev/sda — run without --dry-run to choose)")
+        dr = "UEFI" if _firmware_is_uefi() else "BIOS + GRUB on /dev/sda"
+        print(f"  (dry-run defaults: {dr} — run without --dry-run to choose)")
         print()
         print("  [dry-run] No files written. Run without --dry-run to create the host.")
         return
@@ -540,21 +541,41 @@ def _warn_env_boot_mismatch(machine: str, env: str):
         pass
 
 
+def _firmware_is_uefi() -> bool:
+    """True if the running system firmware exposes an EFI runtime (typical on laptops)."""
+    return os.path.isdir("/sys/firmware/efi")
+
+
 def _ask_bootloader(dry_run: bool = False) -> tuple[str, str]:
     """Ask bootloader type and (for BIOS) disk device.
     Returns ('bios', '/dev/sda') or ('uefi', '').
     """
+    uefi = _firmware_is_uefi()
     if dry_run:
-        return "bios", "/dev/sda"
+        return ("uefi", "") if uefi else ("bios", "/dev/sda")
 
+    print()
+    if uefi:
+        print("  Firmware reports UEFI (/sys/firmware/efi). systemd-boot is recommended.")
+        print("  Only choose BIOS + GRUB if you know this machine boots in legacy mode.")
+    else:
+        print("  No EFI sysfs tree: treating as legacy BIOS / VM without UEFI.")
     print()
     print("  Bootloader type:")
     print("    [1] Legacy BIOS + GRUB  (VMs, older hardware)")
-    print("    [2] UEFI                (modern hardware)")
-    ans = input("  Choice [1]: ").strip()
+    print("    [2] UEFI + systemd-boot (typical for current laptops)")
+    default_choice = "2" if uefi else "1"
+    ans = input(f"  Choice [{default_choice}]: ").strip()
+    if not ans:
+        ans = default_choice
 
     if ans == "2":
         return "uefi", ""
+
+    if uefi:
+        print()
+        print("  warning: BIOS + GRUB on a system that exposes UEFI may not boot.")
+        print("  Fix later: edit hosts/<hw>/boot.nix or run scripts/set-boot-uefi.sh from the repo.")
 
     # BIOS: ask for disk device
     # Try to detect available disks

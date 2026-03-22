@@ -72,6 +72,7 @@ Packages
   nixctl pkg add <name>
   nixctl pkg remove <name>
   nixctl pkg list
+  nixctl pkg verify          # nix build system (no switch); after edits, use to catch errors
 
 Flake / machines
   nixctl host list

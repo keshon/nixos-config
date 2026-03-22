@@ -64,6 +64,25 @@ NIXCTL_DIR=~/my-nixos-config nixctl sys rebuild
 
 Your config directory should contain `flake.nix`, `flake.tmpl.nix`, `home.nix`, and `hosts/`.
 
+### Bootloader (UEFI vs BIOS)
+
+If you picked GRUB for a UEFI machine and the system will not boot, you do not need a new flake host: edit `hosts/<hardware>/boot.nix` to use systemd-boot, or from the repo run:
+
+```bash
+bash scripts/set-boot-uefi.sh [HOST]
+sudo nixos-rebuild switch --flake ~/nixos#HOST
+```
+
+`nixctl host new` and bootstrap default to **UEFI** when `/sys/firmware/efi` exists.
+
+### GNOME and Home Manager
+
+Every key under `dconf.settings` in `home.nix` is re-applied on each `home-manager switch`, overwriting the same keys in your session. Keep that block small for things you want enforced (e.g. keyboard layout); leave dock, extensions, favorites, and window sizes to **GNOME Settings** — or use `nixctl dconf apply` once and merge only what you want to keep declaratively.
+
+### Verifying package edits
+
+After `nixctl pkg add` or search install, nixctl runs `nix build` on the current machine’s system closure (no switch). If it fails, fix the list or network and run `nixctl pkg verify` again. To skip the automatic check: `NIXCTL_SKIP_VERIFY=1 nixctl pkg add …`.
+
 ## Commands
 
 ### sys — system management
@@ -101,9 +120,10 @@ nixctl pkg search firefox --fresh
 nixctl pkg add vlc
 nixctl pkg remove vlc
 nixctl pkg list
+nixctl pkg verify
 ```
 
-User packages live in `hosts/<profile>/user-packages.nix` when present. `pkg add` asks: this machine, another flake entry, or shared `home.nix`.
+User packages live in `hosts/<profile>/user-packages.nix` when present. `pkg add` asks: this machine, another flake entry, or shared `home.nix`. After adding packages, nixctl runs a **nix build** (no activation) unless `NIXCTL_SKIP_VERIFY=1`.
 
 ### dconf — GNOME settings
 
@@ -169,6 +189,7 @@ Interactive steps: pick or create a flake host, copy `hardware-configuration.nix
 ```
 nixos-config/
   bootstrap.sh                 # quick start entry (nix run nixctl bootstrap)
+  scripts/set-boot-uefi.sh     # rewrite boot.nix to UEFI if you chose GRUB by mistake
   flake.nix                    # defines nixctl + nixosConfigurations
   flake.tmpl.nix               # template for nixctl host new
   nixctl/                      # nixctl CLI (this subtree)
