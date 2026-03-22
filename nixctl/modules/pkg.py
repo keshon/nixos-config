@@ -543,7 +543,7 @@ def _pick_plain(items: list[tuple[str, str]]) -> list[tuple[str, str]]:
 # ---------------------------------------------------------------------------
 
 def _read_user_packages_nix(path: str) -> list[str]:
-    """Parse hosts/<host>/user-packages.nix — only the `with pkgs; [ ... ]` list."""
+    """Parse hosts/<host>/user-packages.nix — only the `with pkgs; [ ... ]` list (close with `]` not `];`)."""
     try:
         with open(path, encoding="utf-8") as f:
             lines = f.readlines()
@@ -749,6 +749,7 @@ def _create_user_packages_nix(path: str):
     with open(path, "w", encoding="utf-8") as f:
         f.write(
             f"# hosts/{host}/user-packages.nix — managed with nixctl pkg add/remove\n"
+            f"# Close the list with `]` only (no semicolon after `]`).\n"
             f"{{ pkgs, ... }}:\n"
             f"with pkgs; [\n"
             f"]\n"

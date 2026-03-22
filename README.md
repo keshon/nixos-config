@@ -23,3 +23,5 @@ Ad-hoc from the repo: `nix run ./nixctl -- --help`
 | Check before switch | `nixctl sys check` |
 
 Override config directory: `NIXCTL_DIR=/path/to/repo nixctl …`
+
+`nixctl self push` uses `git push` — GitHub still requires authentication to push, even for a public repo (SSH or HTTPS with a [personal access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens), not your account password). `nixctl self status`, `sync`, and `bump` avoid interactive credential prompts for read-only operations.

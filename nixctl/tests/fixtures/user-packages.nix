@@ -5,4 +5,4 @@ with pkgs; [
   vlc
   discord
   telegram-desktop
-];
+]

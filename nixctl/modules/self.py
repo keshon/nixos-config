@@ -25,6 +25,11 @@ nixctl self <command>
 Legacy aliases:
   pull     same as sync
   update   same as bump
+
+Auth:
+  status / sync / bump use read-only Git + Nix (no login for public flakes).
+  push always needs GitHub auth: use SSH remote, or HTTPS + a personal access
+  token (GitHub no longer accepts account passwords over HTTPS).
 """
 
 
@@ -65,7 +70,7 @@ def status():
     last = _git(NIXOS_DIR, ["log", "-1", "--format=%h  %s  (%ar)"])
     print(f"  Commit   : {last or '?'}")
 
-    _git(NIXOS_DIR, ["fetch", "--quiet"], silent=True)
+    _git(NIXOS_DIR, ["fetch", "--quiet"], silent=True, no_prompt=True)
     ahead  = _git(NIXOS_DIR, ["rev-list", "--count", "HEAD..@{u}"])
     behind = _git(NIXOS_DIR, ["rev-list", "--count", "@{u}..HEAD"])
     if ahead and ahead != "0":
@@ -93,7 +98,7 @@ def status():
 
 def sync():
     print("  → git pull --rebase (config repo)...")
-    code = _run(NIXOS_DIR, ["git", "pull", "--rebase"])
+    code = _run(NIXOS_DIR, ["git", "pull", "--rebase"], env=_env_no_git_prompt())
 
     if code != 0:
         print()
@@ -132,9 +137,15 @@ def pull():
 
 def bump():
     print("  → nix flake lock …")
-    code = _run(NIXOS_DIR, ["nix", "flake", "lock"])
+    code = _run(
+        NIXOS_DIR,
+        ["nix", "flake", "lock"],
+        env=_env_no_git_prompt(),
+    )
     if code != 0:
         print("  ✗ flake lock failed")
+        print("    If this needs private inputs, run: nix flake lock")
+        print("    in a shell where you can authenticate.")
         return
     print("  ✓ flake.lock updated")
     print()
@@ -176,6 +187,9 @@ def push(extra_args: list):
         print("  ✓ Pushed")
     else:
         print("  ✗ Push failed")
+        print("    Public repo still requires your identity to push.")
+        print("    • SSH: git remote set-url origin git@github.com:USER/REPO.git")
+        print("    • HTTPS: use a GitHub personal access token (not your password)")
         print("    Try: git -C ~/nixos push --set-upstream origin main")
 
 
@@ -183,18 +197,39 @@ def push(extra_args: list):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _run(cwd: str, cmd: list) -> int:
+def _env_no_git_prompt() -> dict:
+    """
+    Avoid interactive Git / Git Credential Manager prompts for read-only work
+    (fetch, pull on public repos, nix flake lock fetching public flakes).
+    Push still uses the normal environment so you can authenticate when needed.
+    """
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    # Git Credential Manager (Windows / cross-platform): never pop UI for these commands
+    env["GCM_INTERACTIVE"] = "never"
+    env.pop("GIT_ASKPASS", None)
+    return env
+
+
+def _run(cwd: str, cmd: list, *, env: dict | None = None) -> int:
+    if env is not None:
+        return subprocess.run(cmd, cwd=cwd, env=env).returncode
     return subprocess.run(cmd, cwd=cwd).returncode
 
 
-def _git(cwd: str, args: list, silent: bool = False) -> str | None:
+def _git(
+    cwd: str,
+    args: list,
+    silent: bool = False,
+    *,
+    no_prompt: bool = False,
+) -> str | None:
     try:
-        result = subprocess.run(
-            ["git"] + args,
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-        )
+        common = dict(capture_output=True, text=True, cwd=cwd)
+        if no_prompt:
+            result = subprocess.run(["git"] + args, env=_env_no_git_prompt(), **common)
+        else:
+            result = subprocess.run(["git"] + args, **common)
         if result.returncode != 0 and not silent:
             return None
         return result.stdout.strip() or None

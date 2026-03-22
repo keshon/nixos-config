@@ -648,6 +648,7 @@ def _write_packages_nix(name: str, host_dir: str):
     with open(up, "w", encoding="utf-8") as f:
         f.write(
             f"# hosts/{name}/user-packages.nix — nixctl pkg add/remove edits this file\n"
+            f"# Close the list with `]` only (no semicolon after `]`).\n"
             f"{{ pkgs, ... }}:\n"
             f"with pkgs; [\n"
             f"]\n"
