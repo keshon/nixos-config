@@ -52,7 +52,7 @@ def _noop_ok(*args, **kwargs):
     return True
 
 
-def _noop_ok_host(host):
+def _noop_ok_host(host, **kwargs):
     return True
 
 

@@ -32,12 +32,42 @@ nixctl bootstrap
   You will either attach this PC to an existing host in flake.nix or
   create a new host entry (name + reference template), then hardware copy,
   /etc/nixos symlink, rebuild, and Flathub.
+
+  nixctl bootstrap --resume [HOST]
+
+  Skip the wizard and continue from hardware → symlink → rebuild → store → Flathub.
+  Use after fixing a failed step (e.g. nixos-rebuild error). HOST defaults to
+  .nixctl-store or hostname hint.
+
+  nixctl bootstrap --resume --force-hardware [HOST]
+
+  Same as --resume but always re-copy hardware-configuration.nix from /etc/nixos.
 """
 
 
+def _parse_bootstrap_args(args: list) -> tuple[list, bool, bool]:
+    """Return (positional_args, resume, force_hardware)."""
+    resume = False
+    force_hw = False
+    pos: list[str] = []
+    for a in args:
+        if a in ("--resume", "-r"):
+            resume = True
+        elif a == "--force-hardware":
+            force_hw = True
+        else:
+            pos.append(a)
+    return pos, resume, force_hw
+
+
 def run(args: list):
-    if args and args[0] in ("-h", "--help"):
+    if any(a in ("-h", "--help") for a in args):
         print(HELP)
+        return
+
+    pos, resume, force_hw = _parse_bootstrap_args(args)
+    if resume:
+        _resume_bootstrap(pos, force_hw=force_hw)
         return
 
     print("nixctl bootstrap")
@@ -60,7 +90,37 @@ def run(args: list):
 
     print(f"\n  Host: {host}\n")
 
-    if not _finalize_bootstrap(host):
+    if not _finalize_bootstrap(host, resume=False, force_hw=False):
+        return
+
+    print()
+    print("✓ Bootstrap завершён!")
+    print("  Log out and back in for GNOME settings to apply.")
+
+
+def _resume_bootstrap(pos: list, *, force_hw: bool = False):
+    """Wizard skipped: run finalize steps only (idempotent where possible)."""
+    print("nixctl bootstrap --resume")
+    print("─" * 40)
+    host = pos[0].strip() if pos else ""
+    if not host:
+        st = load_store()
+        host = (st.get("host") or st.get("machine") or "").strip()
+    if not host:
+        import platform
+        hint = platform.node().lower().split(".")[0]
+        print(f"  No host in .nixctl-store; hostname hint: {hint}")
+        host = input("  Host name (must match flake.nix nixosConfigurations): ").strip()
+    if not host:
+        print("  ✗ Host name required")
+        return
+
+    print()
+    print(f"  Host: {host}")
+    print("  (skipping wizard — hardware copy unless already present, then symlink, rebuild, …)")
+    print()
+
+    if not _finalize_bootstrap(host, resume=True, force_hw=force_hw):
         return
 
     print()
@@ -197,8 +257,8 @@ def _bootstrap_new_from_ref() -> str | None:
     return name
 
 
-def _finalize_bootstrap(host: str) -> bool:
-    if not _copy_hardware(host):
+def _finalize_bootstrap(host: str, *, resume: bool = False, force_hw: bool = False) -> bool:
+    if not _copy_hardware(host, resume=resume, force_hw=force_hw):
         return False
     if not _link_etc():
         return False
@@ -216,17 +276,21 @@ def _finalize_bootstrap(host: str) -> bool:
     return True
 
 
-def _copy_hardware(host: str) -> bool:
+def _copy_hardware(host: str, *, resume: bool = False, force_hw: bool = False) -> bool:
     src = "/etc/nixos/hardware-configuration.nix"
+    host_dir = os.path.join(HOSTS_DIR, host)
+    os.makedirs(host_dir, exist_ok=True)
+    dst = os.path.join(host_dir, "hardware-configuration.nix")
+
+    if os.path.isfile(dst) and resume and not force_hw:
+        print(f"  — Skipping hardware copy (already exists: {dst})")
+        print("    Re-copy with: nixctl bootstrap --resume --force-hardware")
+        return True
 
     if not os.path.isfile(src):
         print(f"  ✗ {src} not found")
         print("    Run: sudo nixos-generate-config")
         return False
-
-    host_dir = os.path.join(HOSTS_DIR, host)
-    os.makedirs(host_dir, exist_ok=True)
-    dst = os.path.join(host_dir, "hardware-configuration.nix")
 
     shutil.copy2(src, dst)
     print(f"  ✓ {src} → {dst}")

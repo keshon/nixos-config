@@ -1,9 +1,6 @@
 # hosts/desktop/user-packages.nix — nixctl pkg add/remove edits this file
 { pkgs, ... }:
 with pkgs; [
-  kora-icon-theme
-  marble-shell-theme
-
   vlc
   tixati
   discord

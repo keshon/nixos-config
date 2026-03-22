@@ -5,6 +5,7 @@ nixctl — NixOS control center
 
 First run
   nixctl bootstrap              first-time setup on a new machine (wizard)
+  nixctl bootstrap --resume [HOST]   continue after a failed step (no wizard)
 
 System
   nixctl sys rebuild            rebuild the system

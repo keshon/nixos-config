@@ -153,6 +153,8 @@ nixctl cache import /mnt/usb/nix-cache   # rebuild using local cache (no interne
 
 ```bash
 nixctl bootstrap
+nixctl bootstrap --resume [HOST]    # skip wizard; continue from hardware → rebuild
+nixctl bootstrap --resume --force-hardware [HOST]   # re-copy hardware from /etc/nixos
 ```
 
 Interactive wizard for a fresh machine:
@@ -162,6 +164,8 @@ Interactive wizard for a fresh machine:
 4. Create symlink `/etc/nixos → ~/nixos`
 5. `nixos-rebuild switch`
 6. Add Flathub
+
+If something fails (often step 5), fix `flake.nix` / `hosts/…` and run **`nixctl bootstrap --resume vbox`** (or omit the name if `.nixctl-store` already has the host). Hardware copy is skipped when `hosts/<host>/hardware-configuration.nix` already exists unless you pass **`--force-hardware`**.
 
 **One-liner for a fresh NixOS install:**
 ```bash

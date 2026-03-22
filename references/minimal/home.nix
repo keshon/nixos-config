@@ -3,7 +3,9 @@
 # Keep direction-specific defaults here; per-machine lists stay in user-packages.nix.
 { config, pkgs, lib, ... }:
 {
-  # Intentionally minimal — add shared options for this profile when needed.
-  kora-icon-theme
-  marble-shell-theme
+  # Base GNOME look shared by all hosts on this reference (avoid repeating in each user-packages.nix).
+  home.packages = with pkgs; [
+    kora-icon-theme
+    marble-shell-theme
+  ];
 }

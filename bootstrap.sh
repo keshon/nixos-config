@@ -4,6 +4,10 @@
 # Usage on a fresh system:
 #   nix-shell -p git --run "git clone https://github.com/keshon/nixos-config ~/nixos"
 #   bash ~/nixos/bootstrap.sh
+#
+# After a failed step (e.g. rebuild error), fix the config and re-run:
+#   bash ~/nixos/bootstrap.sh --resume vbox
+#   HOST optional if ~/.nixos/.nixctl-store already has host / machine
 
 set -e
 
