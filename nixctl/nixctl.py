@@ -1,59 +1,5 @@
 #!/usr/bin/env python3
-"""
-nixctl — NixOS control center
-══════════════════════════════
-
-First run
-  nixctl bootstrap              first-time setup on a new machine (wizard)
-  nixctl bootstrap --resume [HOST]   continue after a failed step (no wizard)
-
-System
-  nixctl sys rebuild            rebuild the system
-  nixctl sys update             update flake.lock + rebuild
-  nixctl sys check              dry-run, no changes applied
-  nixctl sys rollback           roll back to previous generation
-  nixctl sys gc                 delete old generations
-  nixctl sys generations        list generation history
-
-Packages
-  nixctl pkg search [query]     interactive search (optional query)
-  nixctl pkg add <name>         add package to the chosen packages file
-  nixctl pkg remove <name>      remove package
-  nixctl pkg list               list installed packages
-
-Config repo (hosts, flake)
-  nixctl host list              list all hosts (this machine marked ★)
-  nixctl host new  <n> [--from <ref>]  create host (template = references/<ref>/)
-  nixctl host use  <n>          [advanced] edit another machine's packages without switching hardware
-  nixctl host remove <n>        remove host
-  nixctl host info [<n>]        show host status
-
-  nixctl git status             short git summary
-  nixctl git sync               git pull --rebase (config repo)
-  nixctl git bump               nix flake lock (refresh pinned inputs)
-  nixctl git push [message]     commit and push config changes
-  (alias: nixctl self … — same as git)
-
-Other
-  nixctl dconf apply            dump dconf + insert into home.nix
-  nixctl dconf apply --select   same, with interactive section picker
-  nixctl dconf dump             only save to dconf-backup.txt
-
-  nixctl backup save            create a config snapshot
-  nixctl backup list            list snapshots
-  nixctl backup restore [n]     restore snapshot
-
-  nixctl cache export <path>    export system closure to local cache
-  nixctl cache import <path>    rebuild using local cache (offline)
-
-  nixctl reference list         list reference profiles (host new / bootstrap)
-
-  -h, --help                    show this help
-
-Configuration:
-  By default nixctl looks for your config in ~/nixos/.
-  Override with: NIXCTL_DIR=/path/to/config nixctl <command>
-"""
+"""nixctl — NixOS configuration helper (see modules.ui.FULL_HELP)."""
 
 import sys
 import os
@@ -77,27 +23,29 @@ ROUTES = {
 def main():
     args = sys.argv[1:]
 
-    if not args or args[0] in ("-h", "--help", "help"):
-        print(__doc__)
+    import modules.ui as ui
+
+    if not args:
+        ui.print_context()
+        print(ui.SHORT_HELP)
+        return
+
+    if args[0] in ("-h", "--help", "help"):
+        ui.print_context()
+        print(ui.FULL_HELP)
         return
 
     group = args[0]
     sub_args = args[1:]
 
     if group not in ROUTES:
-        print(f"  Unknown command: {group}")
+        ui.print_context()
+        print(f"error: unknown command {group!r}")
         print(f"  Available: {', '.join(sorted(ROUTES.keys()))}")
-        print("\n  Help: nixctl --help")
+        print("  Run: nixctl --help")
         sys.exit(1)
 
-    try:
-        import modules.config as _nixcfg
-        _m = _nixcfg.get_machine()
-        _env = _nixcfg.get_environment()
-        _ft = _nixcfg.flake_target()
-        print(f"nixctl · machine={_m} · env={_env} · {_ft}", file=sys.stderr)
-    except Exception:
-        pass
+    ui.print_context()
 
     import importlib
     mod = importlib.import_module(ROUTES[group])

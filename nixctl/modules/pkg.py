@@ -98,7 +98,7 @@ def search(initial_query: str = "", fresh: bool = False):
     # Show progress while index loads
     index = _load_or_fetch(fresh, progress=True)
     if not index:
-        print("  ✗ Failed to load package index")
+        print("  error: failed to load package index")
         return
 
     chosen = _search_tui(index, initial_query)
@@ -114,7 +114,7 @@ def search(initial_query: str = "", fresh: bool = False):
         print("  Cancelled."); return
 
     _insert_chosen_packages(chosen, target_file)
-    print(f"  ✓ Added to: {target_file}")
+    print(f"  done: added to: {target_file}")
     _maybe_rebuild()
 
 
@@ -166,7 +166,7 @@ def _search_tui(index: list[tuple[str, str]], initial_query: str = "") -> list[t
             # Row 2: hints
             hints = "[↑↓/PgUp/PgDn] navigate  [Tab] select  [Enter] install  [Esc/Q] cancel"
             stdscr.addstr(2, 0, hints[:w-1], curses.A_DIM)
-            stdscr.addstr(3, 0, "─" * (w-1))
+            stdscr.addstr(3, 0, "-" * (w - 1))
 
             # Scroll
             if cur < off: off = cur
@@ -179,7 +179,7 @@ def _search_tui(index: list[tuple[str, str]], initial_query: str = "") -> list[t
                 if idx >= len(results): break
                 name, desc = results[idx]
                 is_sel = (name, desc) in selected_items
-                mark = "[✓]" if is_sel else "[ ]"
+                mark = "[x]" if is_sel else "[ ]"
                 max_desc = max(0, w - 38)
                 label = f" {mark} {name:<32} {desc[:max_desc]}"
                 row = 4 + i
@@ -320,17 +320,17 @@ def _load_or_fetch(fresh: bool = False, progress: bool = False) -> list[tuple[st
     if not fresh and _cache_fresh():
         if progress:
             count = len(_read_cache())
-            print(f"  ✓ Index from cache ({count} packages)")
+            print(f"  done: index from cache ({count} packages)")
         return _read_cache()
 
     if progress:
-        print("  → Loading nixpkgs index... (first time ~30s, then cached)")
+        print("  -> Loading nixpkgs index... (first time ~30s, then cached)")
 
     index = _fetch_index()
     if index:
         _write_cache(index)
         if progress:
-            print(f"  ✓ Index loaded: {len(index)} packages")
+            print(f"  done: index loaded: {len(index)} packages")
     return index
 
 
@@ -379,7 +379,7 @@ def _fetch_index() -> list[tuple[str, str]]:
         # Sort by name
         return sorted(index, key=lambda x: x[0])
     except subprocess.TimeoutExpired:
-        print("  ⚠ Index fetch timed out, trying fallback...")
+        print("  warning: index fetch timed out, trying fallback...")
         return _fetch_index_fallback()
     except Exception:
         return _fetch_index_fallback()
@@ -419,7 +419,7 @@ def add(pkg_name: str) -> bool:
 
     ok = _insert_to_file(pkg_name, target_file)
     if ok:
-        print(f"  ✓ Added to: {target_file}")
+        print(f"  done: added to: {target_file}")
         _maybe_rebuild()
     return ok
 
@@ -427,7 +427,7 @@ def add(pkg_name: str) -> bool:
 def remove(pkg_name: str) -> bool:
     candidates = _find_package(pkg_name)
     if not candidates:
-        print(f"  ✗ '{pkg_name}' not found in any packages.nix or home.nix")
+        print(f"  error: {pkg_name!r} not found in any packages file or home.nix")
         print("    Check the list: nixctl pkg list"); return False
 
     if len(candidates) == 1:
@@ -461,7 +461,7 @@ def list_pkgs():
         pkgs = _read_packages(pkg_file)
         if pkgs:
             label = os.path.basename(pkg_file)
-            print(f"  [flake #{machine} · env {env}] {label} ({len(pkgs)}):")
+            print(f"  [flake #{machine} | profile {env}] {label} ({len(pkgs)}):")
             for p in pkgs:
                 print(f"    • {p}")
             shown_any = True
@@ -501,7 +501,7 @@ def _ask_install_target() -> tuple[str | None, str]:
 
     pkg_here = packages_list_path(env_here)
     add_option(
-        f"this machine (flake {machine}) · env '{env_here}' → {pkg_here}",
+        f"this machine (flake {machine}) | profile '{env_here}' -> {pkg_here}",
         pkg_here,
     )
     for h in sorted(hosts):
@@ -509,8 +509,8 @@ def _ask_install_target() -> tuple[str | None, str]:
             continue
         env_h, _hw_h, _ref = parse_flake_host_entry(h)
         f = packages_list_path(env_h)
-        add_option(f"flake host '{h}' · env '{env_h}' → {f}", f)
-    add_option("all hosts (shared) → home.nix", HOME_NIX)
+        add_option(f"flake '{h}' | profile '{env_h}' -> {f}", f)
+    add_option("all hosts (shared) -> home.nix", HOME_NIX)
     for i, (label, _) in enumerate(options, 1):
         print(f"    [{i}] {label}")
     ans = input(f"  Choice [1]: ").strip()
@@ -531,7 +531,7 @@ def _install_chosen(chosen: list[tuple[str, str]]):
     if target_file is None:
         print("  Cancelled."); return
     _insert_chosen_packages(chosen, target_file)
-    print(f"  ✓ Added to: {target_file}")
+    print(f"  done: added to: {target_file}")
     _maybe_rebuild()
 
 
@@ -719,12 +719,12 @@ def _insert_to_user_packages_nix(pkg_name: str, path: str) -> bool:
         with open(path, encoding="utf-8") as f:
             lines = f.readlines()
     except Exception:
-        print(f"  ✗ Cannot read: {path}")
+        print(f"  error: cannot read: {path}")
         return False
 
     insert_at = _find_with_pkgs_list_insert_line(lines)
     if insert_at is None:
-        print(f"  ✗ with pkgs; [ … ] list not found in {path}")
+        print(f"  error: with pkgs; [ ... ] list not found in {path}")
         return False
 
     # Indent: match previous non-comment package line inside the list, else two spaces
@@ -759,7 +759,7 @@ def _insert_to_file(pkg_name: str, path: str) -> bool:
         with open(path, encoding="utf-8") as f:
             lines = f.readlines()
     except Exception:
-        print(f"  ✗ Cannot read: {path}"); return False
+        print(f"  error: cannot read: {path}"); return False
     in_block = in_shell_block = False
     depth = 0
     insert_at = -1
@@ -784,7 +784,7 @@ def _insert_to_file(pkg_name: str, path: str) -> bool:
                 if insert_at == -1: insert_at = i
                 break
     if insert_at == -1:
-        print(f"  ✗ home.packages block not found in {path}"); return False
+        print(f"  error: home.packages block not found in {path}"); return False
     _backup(path)
     lines.insert(insert_at, f"{indent}{pkg_name}\n")
     with open(path, "w", encoding="utf-8") as f:
@@ -805,11 +805,11 @@ def _remove_from_file(pkg_name: str, path: str) -> bool:
         else:
             new_lines.append(line)
     if not removed:
-        print(f"  ✗ Line '{pkg_name}' not found"); return False
+        print(f"  error: line {pkg_name!r} not found"); return False
     _backup(path)
     with open(path, "w", encoding="utf-8") as f:
         f.writelines(new_lines)
-    print(f"  ✓ Removed: {pkg_name}")
+    print(f"  done: removed: {pkg_name}")
     return True
 
 
@@ -825,7 +825,7 @@ def _create_user_packages_nix(path: str):
             f"with pkgs; [\n"
             f"]\n"
         )
-    print(f"  ✓ Created: {path}")
+    print(f"  done: created: {path}")
 
 
 def _create_packages_nix(path: str):
@@ -848,7 +848,7 @@ def _create_packages_nix(path: str):
             f"  ] ++ userPkgs;\n"
             f"}}\n"
         )
-    print(f"  ✓ Created: {path}")
+    print(f"  done: created: {path}")
 
 
 def _backup(path: str):

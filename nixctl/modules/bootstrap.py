@@ -1,5 +1,5 @@
 """
-modules/bootstrap.py — первичная установка на новую машину
+modules/bootstrap.py — first-time setup on a new machine
 
 nixctl bootstrap
 """
@@ -35,7 +35,7 @@ nixctl bootstrap
 
   nixctl bootstrap --resume [HOST]
 
-  Skip the wizard and continue from hardware → symlink → rebuild → store → Flathub.
+  Skip the wizard and continue from hardware -> symlink -> rebuild -> store -> Flathub.
   Use after fixing a failed step (e.g. nixos-rebuild error). HOST defaults to
   .nixctl-store or hostname hint.
 
@@ -71,7 +71,7 @@ def run(args: list):
         return
 
     print("nixctl bootstrap")
-    print("─" * 40)
+    print("-" * 40)
     _print_intro()
 
     mode = _choose_mode()
@@ -94,14 +94,14 @@ def run(args: list):
         return
 
     print()
-    print("✓ Bootstrap завершён!")
+    print("done: bootstrap finished.")
     print("  Log out and back in for GNOME settings to apply.")
 
 
 def _resume_bootstrap(pos: list, *, force_hw: bool = False):
     """Wizard skipped: run finalize steps only (idempotent where possible)."""
     print("nixctl bootstrap --resume")
-    print("─" * 40)
+    print("-" * 40)
     host = pos[0].strip() if pos else ""
     if not host:
         st = load_store()
@@ -112,7 +112,7 @@ def _resume_bootstrap(pos: list, *, force_hw: bool = False):
         print(f"  No host in .nixctl-store; hostname hint: {hint}")
         host = input("  Host name (must match flake.nix nixosConfigurations): ").strip()
     if not host:
-        print("  ✗ Host name required")
+        print("  error: host name required")
         return
 
     print()
@@ -124,7 +124,7 @@ def _resume_bootstrap(pos: list, *, force_hw: bool = False):
         return
 
     print()
-    print("✓ Bootstrap завершён!")
+    print("done: bootstrap finished.")
     print("  Log out and back in for GNOME settings to apply.")
 
 
@@ -157,13 +157,13 @@ def _pick_existing_host() -> str | None:
     hosts = _hosts_from_flake()
 
     if not hosts:
-        print(f"  Hostname машины: {detected}")
-        print(f"  Hostы из flake.nix не определены.")
-        ans = input("  Введи имя хоста вручную: ").strip()
+        print(f"  Hostname: {detected}")
+        print("  No flake hosts found (nix eval failed or empty).")
+        ans = input("  Enter flake host name manually: ").strip()
         return ans or None
 
-    print(f"  Hostname машины : {detected}")
-    print(f"  Hostы в flake.nix: {', '.join(hosts)}")
+    print(f"  Hostname: {detected}")
+    print(f"  Flake hosts: {', '.join(hosts)}")
     print()
 
     auto_match = None
@@ -173,14 +173,14 @@ def _pick_existing_host() -> str | None:
             break
 
     if auto_match:
-        print(f"  Автоматически определён хост: {auto_match}")
+        print(f"  Suggested match: {auto_match}")
 
     for i, h in enumerate(hosts, 1):
-        marker = " ← рекомендуется" if h == auto_match else ""
+        marker = " (suggested)" if h == auto_match else ""
         print(f"    [{i}] {h}{marker}")
 
     default = hosts.index(auto_match) + 1 if auto_match else 1
-    ans = input(f"  Выбери хост [{default}]: ").strip()
+    ans = input(f"  Choose host [{default}]: ").strip()
 
     try:
         idx = int(ans) - 1 if ans else default - 1
@@ -190,7 +190,7 @@ def _pick_existing_host() -> str | None:
         if ans in hosts:
             return ans
 
-    print(f"  Неверный выбор.")
+    print("  error: invalid choice.")
     return None
 
 
@@ -206,7 +206,7 @@ def _resolve_reference_list() -> list[str] | None:
             f"\"{REFERENCE_DEFAULT}\" ({fallback})."
         )
         return [REFERENCE_DEFAULT]
-    print(f"  ✗ No reference profiles found under {REFERENCES_DIR}")
+    print(f"  error: no reference profiles found under {REFERENCES_DIR}")
     print("    Add references/<name>/home.nix, then re-run bootstrap.")
     return None
 
@@ -223,23 +223,23 @@ def _bootstrap_new_from_ref() -> str | None:
         print(f"    [{i}] {r}{mark}")
 
     default_ref = 1
-    ans = input(f"  Выбери шаблон [{default_ref}]: ").strip()
+    ans = input(f"  Choose template [{default_ref}]: ").strip()
     try:
         idx = int(ans) - 1 if ans else default_ref - 1
         if not (0 <= idx < len(refs)):
-            print("  Неверный выбор.")
+            print("  error: invalid choice.")
             return None
         ref = refs[idx]
     except ValueError:
         if ans in refs:
             ref = ans
         else:
-            print("  Неверный выбор.")
+            print("  error: invalid choice.")
             return None
 
-    name = input("  Имя нового хоста (например laptop): ").strip()
+    name = input("  New flake host name (e.g. laptop): ").strip()
     if not name:
-        print("  Имя обязательно.")
+        print("  error: name is required.")
         return None
 
     err = validate_new_host(name, ref)
@@ -270,7 +270,7 @@ def _finalize_bootstrap(host: str, *, resume: bool = False, force_hw: bool = Fal
     store["host"] = host
     store["created"] = datetime.date.today().isoformat()
     save_store(store)
-    print(f"  ✓ Машина '{host}' сохранена в .nixctl-store")
+    print(f"  done: machine {host!r} saved in .nixctl-store")
 
     _flathub()
     return True
@@ -288,12 +288,12 @@ def _copy_hardware(host: str, *, resume: bool = False, force_hw: bool = False) -
         return True
 
     if not os.path.isfile(src):
-        print(f"  ✗ {src} not found")
+        print(f"  error: {src} not found")
         print("    Run: sudo nixos-generate-config")
         return False
 
     shutil.copy2(src, dst)
-    print(f"  ✓ {src} → {dst}")
+    print(f"  done: {src} -> {dst}")
 
     import subprocess
 
@@ -302,11 +302,11 @@ def _copy_hardware(host: str, *, resume: bool = False, force_hw: bool = False) -
         capture_output=True, text=True, cwd=NIXOS_DIR,
     )
     if result.returncode == 0:
-        print(f"  ✓ git add hosts/{host}/hardware-configuration.nix")
+        print(f"  done: git add hosts/{host}/hardware-configuration.nix")
     else:
-        print(f"  ⚠ git add не сработал: {result.stderr.strip()}")
+        print(f"  warning: git add failed: {result.stderr.strip()}")
         print(
-            f"    Выполни вручную: cd ~/nixos && git add "
+            f"    Run manually: cd ~/nixos && git add "
             f"hosts/{host}/hardware-configuration.nix"
         )
 
@@ -317,31 +317,31 @@ def _link_etc() -> bool:
     etc = "/etc/nixos"
 
     if os.path.islink(etc) and os.readlink(etc) == NIXOS_DIR:
-        print(f"  — /etc/nixos уже → {NIXOS_DIR}")
+        print(f"  -- /etc/nixos already points to {NIXOS_DIR}")
         return True
 
     if os.path.exists(etc) or os.path.islink(etc):
-        if not confirm(f"Заменить /etc/nixos → {NIXOS_DIR}?", default=True):
+        if not confirm(f"Replace /etc/nixos with a symlink to {NIXOS_DIR}?", default=True):
             return False
 
     code, _ = exec_shell(f"sudo rm -rf {etc} && sudo ln -s {NIXOS_DIR} {etc}")
     if code == 0:
-        print(f"  ✓ /etc/nixos → {NIXOS_DIR}")
+        print(f"  done: /etc/nixos -> {NIXOS_DIR}")
         return True
-    print(f"  ✗ Ошибка симлинка")
+    print("  error: could not create symlink for /etc/nixos")
     return False
 
 
 def _rebuild(host: str) -> bool:
     target = flake_target(host)
-    print(f"  → nixos-rebuild switch ({target})")
-    print("    (первый раз может занять несколько минут...)")
+    print(f"  -> nixos-rebuild switch ({target})")
+    print("    (first build may take several minutes)")
 
     code, _ = exec_shell(f"sudo nixos-rebuild switch --flake {target}")
     if code == 0:
-        print("  ✓ System built")
+        print("  done: system built")
         return True
-    print(f"  ✗ nixos-rebuild failed (код {code})")
+    print(f"  error: nixos-rebuild failed (exit {code})")
     return False
 
 
@@ -351,4 +351,4 @@ def _flathub():
         "https://flathub.org/repo/flathub.flatpakrepo 2>/dev/null",
         capture=True,
     )
-    print("  ✓ Flathub" if code == 0 else "  — Flathub: пропущено")
+    print("  done: Flathub remote configured" if code == 0 else "  -- Flathub: skipped or failed")

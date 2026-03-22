@@ -47,9 +47,9 @@ def run(args: list):
 def dump(path: str = DCONF_FILE) -> bool:
     code, _ = exec_shell(f"dconf dump / > {path}")
     if code == 0:
-        print(f"  ✓ Saved: {path}")
+        print(f"  done: saved: {path}")
         return True
-    print(f"  ✗ dconf dump failed")
+    print("  error: dconf dump failed")
     return False
 
 
@@ -61,9 +61,9 @@ def apply(select: bool = False,
           dconf_path: str = DCONF_FILE,
           home_nix: str = HOME_NIX):
     if not os.path.exists(dconf_path):
-        print(f"  ✗ Not found: {dconf_path}"); return
+        print(f"  error: not found: {dconf_path}"); return
     if not os.path.exists(home_nix):
-        print(f"  ✗ Not found: {home_nix}"); return
+        print(f"  error: not found: {home_nix}"); return
 
     sections = parse_dconf(dconf_path)
     print(f"  Sections found: {len(sections)}")
@@ -196,7 +196,7 @@ def inject(nix_block: str, home_nix: str):
     ei = content.find(MARKER_END)
 
     if bi == -1 or ei == -1:
-        print(f"  ✗ Markers {MARKER_BEGIN!r} / {MARKER_END!r} not found in {home_nix}")
+        print(f"  error: markers {MARKER_BEGIN!r} / {MARKER_END!r} not found in {home_nix}")
         print("    Add them inside dconf.settings = { ... } in home.nix")
         return
 
@@ -219,7 +219,7 @@ def inject(nix_block: str, home_nix: str):
     with open(home_nix, "w", encoding="utf-8") as f:
         f.write(new_content)
 
-    print(f"  ✓ home.nix updated  (backup: {home_nix}.bak)")
+    print(f"  done: home.nix updated  (backup: {home_nix}.bak)")
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +249,7 @@ def tui_select(sections: list[dict]) -> list[dict]:
                           curses.color_pair(3) | curses.A_BOLD)
             hints = "[↑↓/jk] navigate  [Space] toggle  [A] all  [N] none  [Enter] apply  [Q] cancel"
             stdscr.addstr(1, 0, hints[:w - 1])
-            stdscr.addstr(2, 0, "─" * (w - 1))
+            stdscr.addstr(2, 0, "-" * (w - 1))
 
             if cur < off: off = cur
             elif cur >= off + vis: off = cur - vis + 1
@@ -258,7 +258,7 @@ def tui_select(sections: list[dict]) -> list[dict]:
             for i in range(vis):
                 idx = off + i
                 if idx >= len(sections): break
-                mark  = "[✓]" if selected[idx] else "[ ]"
+                mark  = "[x]" if selected[idx] else "[ ]"
                 nkeys = len(sections[idx]["keys"])
                 label = f" {mark} {sections[idx]['path']}  ({nkeys} keys)"
                 row   = 3 + i

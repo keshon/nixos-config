@@ -11,7 +11,7 @@ nixctl sys generations
 
 from .config import (
     exec_cmd, exec_shell, flake_target, confirm,
-    get_machine, get_store_value, _hostname_guess,
+    get_machine, get_environment, _hostname_guess,
 )
 
 HELP = """\
@@ -55,53 +55,53 @@ def run(args: list):
 
 def rebuild(host: str | None = None) -> int:
     machine = get_machine()
-    env     = get_store_value("host") or machine
+    profile = get_environment()
 
-    if not host and env != machine:
+    if not host and profile != machine:
         print()
-        print(f"  ⚠  Active environment : {env}")
-        print(f"  ⚠  This machine       : {machine}")
-        print(f"  ⚠  Will rebuild with packages from '{env}' + hardware from '{machine}'")
+        print(f"  warning: software profile: {profile}")
+        print(f"  warning: this machine (hardware): {machine}")
+        print(f"  warning: rebuild will use hosts/{profile}/ packages + hosts/{machine}/ hardware.")
         print()
         if not confirm("Continue rebuild?", default=False):
             print("  Cancelled.")
-            print(f"  To restore your own environment: nixctl host use {machine}")
+            print(f"  To use the default tree for this machine: nixctl host use {machine}")
             return 1
 
     target = flake_target(host)
-    print(f"  → nixos-rebuild switch ({target})")
+    print(f"  -> nixos-rebuild switch ({target})")
     code = exec_cmd(["nixos-rebuild", "switch", "--flake", target], sudo=True)
     _done(code)
     return code
 
 
 def update(host: str | None = None) -> int:
-    print("  → nix flake update...")
+    print("  -> nix flake update...")
     code = exec_cmd(["nix", "flake", "update"])
     if code != 0:
-        print(f"  ✗ flake update failed (code {code})")
+        print(f"  error: flake update failed (exit {code})")
         return code
-    print("  ✓ flake.lock updated")
+    print("  done: flake.lock updated")
     return rebuild(host)
 
 
 def check(host: str | None = None) -> int:
     target = flake_target(host)
-    print(f"  → nixos-rebuild dry-activate ({target})")
+    print(f"  -> nixos-rebuild dry-activate ({target})")
     code = exec_cmd(["nixos-rebuild", "dry-activate", "--flake", target], sudo=True)
     _done(code)
     return code
 
 
 def rollback() -> int:
-    print("  → nixos-rebuild switch --rollback")
+    print("  -> nixos-rebuild switch --rollback")
     code = exec_cmd(["nixos-rebuild", "switch", "--rollback"], sudo=True)
     _done(code)
     return code
 
 
 def gc() -> int:
-    print("  → nix-collect-garbage -d")
+    print("  -> nix-collect-garbage -d")
     if not confirm("Delete all old generations?", default=False):
         print("  Cancelled.")
         return 0
@@ -115,4 +115,4 @@ def generations() -> int:
 
 
 def _done(code: int):
-    print("  ✓ Done" if code == 0 else f"  ✗ Error (code {code})")
+    print("  done." if code == 0 else f"  error: exit code {code}")
