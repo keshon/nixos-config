@@ -10,3 +10,4 @@ __pycache__/
 # Legacy layout at repo root only (nixctl app lives in nixctl/)
 /nixctl.py
 /modules/
+.nixctl-pkg-index.json

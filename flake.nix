@@ -19,7 +19,6 @@
     system = "x86_64-linux";
     pkgs = nixpkgs.legacyPackages.${system};
 
-    # nixctl lives in ./nixctl (same repo as this flake — no separate nixctl input).
     nixctl = pkgs.stdenvNoCC.mkDerivation {
       pname = "nixctl";
       version = "0.1.0";
@@ -85,6 +84,7 @@
     nixosConfigurations = {
       desktop = mkHost { env = "desktop"; hw = "desktop"; };
       laptop = mkHost { env = "laptop"; hw = "laptop"; };
+      vbox = mkHost { env = "desktop"; hw = "vbox"; };  # окружение desktop + железо vbox
     };
   };
 }
