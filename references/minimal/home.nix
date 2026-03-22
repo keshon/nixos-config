@@ -4,4 +4,6 @@
 { config, pkgs, lib, ... }:
 {
   # Intentionally minimal — add shared options for this profile when needed.
+  kora-icon-theme
+  marble-shell-theme
 }
