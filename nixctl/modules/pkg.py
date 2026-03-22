@@ -751,7 +751,7 @@ def _create_user_packages_nix(path: str):
             f"# hosts/{host}/user-packages.nix — managed with nixctl pkg add/remove\n"
             f"{{ pkgs, ... }}:\n"
             f"with pkgs; [\n"
-            f"];\n"
+            f"]\n"
         )
     print(f"  ✓ Created: {path}")
 
@@ -766,13 +766,13 @@ def _create_packages_nix(path: str):
     with open(path, "w", encoding="utf-8") as f:
         f.write(
             f"# hosts/{host}/packages.nix — managed by nixctl host; edit user-packages.nix for packages\n"
-            f"{{ pkgs, inputs, ... }}:\n"
+            f"{{ pkgs, nixctl, ... }}:\n"
             f"let\n"
             f"  userPkgs = import ./user-packages.nix {{ inherit pkgs; }};\n"
             f"in\n"
             f"{{\n"
             f"  home.packages = with pkgs; [\n"
-            f"    inputs.nixctl.packages.${{pkgs.system}}.default\n"
+            f"    nixctl\n"
             f"  ] ++ userPkgs;\n"
             f"}}\n"
         )

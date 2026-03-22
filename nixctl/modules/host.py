@@ -650,7 +650,7 @@ def _write_packages_nix(name: str, host_dir: str):
             f"# hosts/{name}/user-packages.nix — nixctl pkg add/remove edits this file\n"
             f"{{ pkgs, ... }}:\n"
             f"with pkgs; [\n"
-            f"];\n"
+            f"]\n"
         )
     path = os.path.join(host_dir, "packages.nix")
     with open(path, "w", encoding="utf-8") as f:
