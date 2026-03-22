@@ -149,6 +149,22 @@ class TestInsertPackage:
         )
         assert _read_packages(str(dst)).count("go") == 1
 
+    def test_comment_with_example_does_not_confuse_insert(self, tmp_path):
+        """Regression: # comments must not contain a fake `with pkgs; [` opener."""
+        dst = tmp_path / "user-packages.nix"
+        dst.write_text(
+            "# see `with pkgs; [` in other files\n"
+            "{ pkgs, ... }:\n"
+            "with pkgs; [\n"
+            "  hello\n"
+            "]\n",
+            encoding="utf-8",
+        )
+        _insert_to_file("go", str(dst))
+        text = dst.read_text()
+        assert text.index("go") > text.index("with pkgs")
+        assert "go" in _read_packages(str(dst))
+
 
 class TestRemovePackage:
     def test_removes_package(self, tmp_path):

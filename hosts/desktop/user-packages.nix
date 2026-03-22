@@ -1,5 +1,5 @@
 # hosts/desktop/user-packages.nix — nixctl pkg add/remove edits this file
-# Nix: close with `]` only (no `;` after `]`) — `with pkgs; [ … ]` is the whole file body.
+# Nix: end the package list with `]` only (no `;` after the bracket).
 { pkgs, ... }:
 with pkgs; [
   vlc

@@ -540,6 +540,25 @@ def _pick_plain(items: list[tuple[str, str]]) -> list[tuple[str, str]]:
 # File operations
 # ---------------------------------------------------------------------------
 
+def _nix_line_is_comment(stripped: str) -> bool:
+    """Whole-line Nix # comment (user-packages.nix style)."""
+    return bool(stripped) and stripped.startswith("#")
+
+
+def _find_with_pkgs_header_line(lines: list[str]) -> int | None:
+    """
+    Index of the real `with pkgs; [` line — not a # comment (comments may mention
+    `with pkgs; [` and would break naive matching).
+    """
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if _nix_line_is_comment(stripped):
+            continue
+        if "with pkgs" in line and "[" in line:
+            return i
+    return None
+
+
 def _insert_chosen_packages(chosen: list[tuple[str, str]], target_file: str) -> None:
     """
     Insert packages from search/add. Same attribute name can appear on multiple index
@@ -565,11 +584,7 @@ def _find_with_pkgs_list_insert_line(lines: list[str]) -> int | None:
     Line index to insert a new attribute name: immediately before the `]` that closes
     the first `with pkgs; [` list in the file.
     """
-    start = None
-    for i, line in enumerate(lines):
-        if "with pkgs" in line and "[" in line:
-            start = i
-            break
+    start = _find_with_pkgs_header_line(lines)
     if start is None:
         return None
     depth = lines[start].count("[") - lines[start].count("]")
@@ -593,6 +608,8 @@ def _read_user_packages_nix(path: str) -> list[str]:
     for line in lines:
         stripped = line.strip()
         if not in_block:
+            if _nix_line_is_comment(stripped):
+                continue
             if "with pkgs" in stripped and "[" in stripped:
                 in_block = True
                 depth = stripped.count("[") - stripped.count("]")
@@ -693,7 +710,7 @@ def _insert_to_user_packages_nix(pkg_name: str, path: str) -> bool:
 
     # Indent: match previous non-comment package line inside the list, else two spaces
     indent = "  "
-    start = next((i for i, ln in enumerate(lines) if "with pkgs" in ln and "[" in ln), None)
+    start = _find_with_pkgs_header_line(lines)
     if start is not None:
         for j in range(start + 1, insert_at):
             raw = lines[j]
